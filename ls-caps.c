@@ -841,7 +841,7 @@ static void cap_express_link(struct device *d, int where, int type)
   if ((type == PCI_EXP_TYPE_ROOT_PORT) || (type == PCI_EXP_TYPE_ENDPOINT) ||
       (type == PCI_EXP_TYPE_LEG_END) || (type == PCI_EXP_TYPE_PCI_BRIDGE))
     printf(" RCB %d bytes,", w & PCI_EXP_LNKCTL_RCB ? 128 : 64);
-  printf(" Disabled%c CommClk%c\n\t\t\tExtSynch%c ClockPM%c AutWidDis%c BWInt%c AutBWInt%c\n",
+  printf(" LnkDisable%c CommClk%c\n\t\t\tExtSynch%c ClockPM%c AutWidDis%c BWInt%c AutBWInt%c\n",
 	FLAG(w, PCI_EXP_LNKCTL_DISABLE),
 	FLAG(w, PCI_EXP_LNKCTL_CLOCK),
 	FLAG(w, PCI_EXP_LNKCTL_XSYNCH),
@@ -1153,12 +1153,9 @@ static void cap_express_dev2(struct device *d, int where, int type)
     }
 
   w = get_conf_word(d, where + PCI_EXP_DEVCTL2);
-  printf("\t\tDevCtl2: Completion Timeout: %s, TimeoutDis%c LTR%c 10BitTagReq%c OBFF %s,",
+  printf("\t\tDevCtl2: Completion Timeout: %s, TimeoutDis%c",
 	cap_express_dev2_timeout_value(PCI_EXP_DEVCTL2_TIMEOUT_VALUE(w)),
-	FLAG(w, PCI_EXP_DEVCTL2_TIMEOUT_DIS),
-	FLAG(w, PCI_EXP_DEVCTL2_LTR),
-	FLAG(w, PCI_EXP_DEVCTL2_10BIT_TAG_REQ),
-	cap_express_devctl2_obff(PCI_EXP_DEVCTL2_OBFF(w)));
+	FLAG(w, PCI_EXP_DEVCTL2_TIMEOUT_DIS));
   if (type == PCI_EXP_TYPE_ROOT_PORT || type == PCI_EXP_TYPE_DOWNSTREAM)
     printf(" ARIFwd%c\n", FLAG(w, PCI_EXP_DEVCTL2_ARI));
   else
@@ -1176,6 +1173,15 @@ static void cap_express_dev2(struct device *d, int where, int type)
         printf(" EgressBlck%c", FLAG(w, PCI_EXP_DEVCTL2_ATOMICOP_EGRESS_BLOCK));
       printf("\n");
     }
+  printf("\t\t\t IDOReq%c IDOCompl%c LTR%c EmergencyPowerReductionReq%c\n",
+	FLAG(w, PCI_EXP_DEVCTL2_IDO_REQ_EN),
+	FLAG(w, PCI_EXP_DEVCTL2_IDO_CMP_EN),
+	FLAG(w, PCI_EXP_DEVCTL2_LTR),
+	FLAG(w, PCI_EXP_DEVCTL2_EPR_REQ));
+  printf("\t\t\t 10BitTagReq%c OBFF %s, EETLPPrefixBlk%c\n",
+	FLAG(w, PCI_EXP_DEVCTL2_10BIT_TAG_REQ),
+	cap_express_devctl2_obff(PCI_EXP_DEVCTL2_OBFF(w)),
+	FLAG(w, PCI_EXP_DEVCTL2_EE_TLP_BLK));
 }
 
 static const char *cap_express_link2_speed_cap(int vector)
@@ -1430,7 +1436,7 @@ cap_express(struct device *d, int where, int cap)
     default:
       printf("Unknown type %d", type);
   }
-  printf(", MSI %02x\n", (cap & PCI_EXP_FLAGS_IRQ) >> 9);
+  printf(", IntMsgNum %d\n", (cap & PCI_EXP_FLAGS_IRQ) >> 9);
   if (verbose < 2)
     return type;
 

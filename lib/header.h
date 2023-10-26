@@ -903,9 +903,13 @@
 #define  PCI_EXP_DEVCTL2_ARI		0x0020	/* ARI Forwarding */
 #define  PCI_EXP_DEVCTL2_ATOMICOP_REQUESTER_EN	0x0040	/* AtomicOp RequesterEnable */
 #define  PCI_EXP_DEVCTL2_ATOMICOP_EGRESS_BLOCK	0x0080	/* AtomicOp Egress Blocking */
+#define  PCI_EXP_DEVCTL2_IDO_REQ_EN	0x0100	/* Allow IDO for requests */
+#define  PCI_EXP_DEVCTL2_IDO_CMP_EN	0x0200	/* Allow IDO for completions */
 #define  PCI_EXP_DEVCTL2_LTR		0x0400	/* LTR enabled */
+#define  PCI_EXP_DEVCTL2_EPR_REQ	0x0800	/* Emergency Power Reduction Request */
 #define  PCI_EXP_DEVCTL2_10BIT_TAG_REQ	0x1000 /* 10 Bit Tag Requester enabled */
 #define  PCI_EXP_DEVCTL2_OBFF(x)		(((x) >> 13) & 3) /* OBFF enabled */
+#define  PCI_EXP_DEVCTL2_EE_TLP_BLK	0x8000	/* End-End TLP Prefix Blocking */
 #define PCI_EXP_DEVSTA2			0x2a	/* Device Status */
 #define PCI_EXP_LNKCAP2			0x2c	/* Link Capabilities */
 #define  PCI_EXP_LNKCAP2_SPEED(x)	(((x) >> 1) & 0x7f)
@@ -1301,9 +1305,10 @@
 #define  PCI_PRI_CTRL_ENABLE	0x01	/* Enable */
 #define  PCI_PRI_CTRL_RESET	0x02	/* Reset */
 #define PCI_PRI_STATUS		0x06	/* PRI status register */
-#define  PCI_PRI_STATUS_RF	0x001	/* Response Failure */
-#define  PCI_PRI_STATUS_UPRGI	0x002	/* Unexpected PRG index */
-#define  PCI_PRI_STATUS_STOPPED	0x100	/* PRI Stopped */
+#define  PCI_PRI_STATUS_RF	0x0001	/* Response Failure */
+#define  PCI_PRI_STATUS_UPRGI	0x0002	/* Unexpected PRG index */
+#define  PCI_PRI_STATUS_STOPPED	0x0100	/* PRI Stopped */
+#define  PCI_PRI_STATUS_PASID	0x8000	/* PASID required in PRG response */
 #define PCI_PRI_MAX_REQ		0x08	/* PRI max reqs supported */
 #define PCI_PRI_ALLOC_REQ	0x0c	/* PRI max reqs allowed */
 
