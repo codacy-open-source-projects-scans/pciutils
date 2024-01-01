@@ -592,12 +592,14 @@ grant_process_token_dacl_permissions(HANDLE process, DWORD permissions, HANDLE *
 
   if (MySetSecurityInfo(*token, SE_KERNEL_OBJECT, DACL_SECURITY_INFORMATION, NULL, NULL, new_dacl, NULL) != ERROR_SUCCESS)
     {
+      LocalFree(new_dacl);
       LocalFree(*security_descriptor);
       LocalFree(owner);
       CloseHandle(*token);
       return FALSE;
     }
 
+  LocalFree(new_dacl);
   LocalFree(owner);
   return TRUE;
 }
@@ -1143,7 +1145,7 @@ SetProcessUserModeIOPL(VOID)
    */
 
   if (!LookupPrivilegeValue(NULL, SE_TCB_NAME, &luid_tcb_privilege))
-    goto err_not_implemented;
+    goto err_privilege_not_held;
 
   /*
    * If the current thread has already Tcb privilege enabled then there

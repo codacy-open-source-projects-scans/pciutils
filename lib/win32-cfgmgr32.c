@@ -403,9 +403,12 @@ get_driver_path_for_service(struct pci_access *a, LPCWSTR service_name, SC_HANDL
   SERVICE_STATUS service_status;
   SC_HANDLE service = NULL;
   char *driver_path = NULL;
+  int trim_system32 = 0;
   UINT systemroot_len;
   int driver_path_len;
+  UINT system32_len;
   HMODULE kernel32;
+  WCHAR *trim_ptr;
   DWORD error;
 
   service = OpenServiceW(manager, service_name, SERVICE_QUERY_CONFIG | SERVICE_QUERY_STATUS);
@@ -466,36 +469,42 @@ retry_service_config:
    */
 
   /*
-   * Old Windows versions return path to NT SystemRoot namespace via
-   * GetWindowsDirectoryW() function. New Windows versions via
-   * GetSystemWindowsDirectoryW(). GetSystemWindowsDirectoryW() is not
-   * provided in old Windows versions, so use GetProcAddress() for
-   * compatibility with all Windows versions.
+   * GetSystemWindowsDirectoryW() returns path to NT SystemRoot namespace.
+   * Alternativelly path to NT SystemRoot namespace can be constructed by
+   * GetSystemDirectoryW() by trimming "\\system32" from the end of path.
+   * GetSystemWindowsDirectoryW() is not provided in old Windows versions,
+   * so use GetProcAddress() for compatibility with all Windows versions.
    */
   kernel32 = GetModuleHandleW(L"kernel32.dll");
   if (kernel32)
     get_system_root_path = (void *)GetProcAddress(kernel32, "GetSystemWindowsDirectoryW");
-  if (!get_system_root_path)
-    get_system_root_path = &GetWindowsDirectoryW;
-
-  systemroot_len = get_system_root_path(NULL, 0);
+  else
+    {
+      get_system_root_path = &GetSystemDirectoryW;
+      trim_system32 = 1;
+    }
 
   if (!service_config->lpBinaryPathName || !service_config->lpBinaryPathName[0])
     {
-      /* No ImagePath is specified, NT kernel assumes implicit kernel driver path by service name. */
-      service_image_path = pci_malloc(a, sizeof(WCHAR) * (systemroot_len + sizeof("\\System32\\drivers\\")-1 + wcslen(service_name) + sizeof(".sys")-1 + 1));
-      systemroot_len = get_system_root_path(service_image_path, systemroot_len+1);
-      if (systemroot_len && service_image_path[systemroot_len-1] != L'\\')
-        service_image_path[systemroot_len++] = L'\\';
-      wcscpy(service_image_path + systemroot_len, L"System32\\drivers\\");
-      wcscpy(service_image_path + systemroot_len + sizeof("System32\\drivers\\")-1, service_name);
-      wcscpy(service_image_path + systemroot_len + sizeof("System32\\drivers\\")-1 + wcslen(service_name), L".sys");
+      /* No ImagePath is specified, NT kernel assumes implicit kernel driver path by service name, which is relative to "\\system32\\drivers". */
+      /* GetSystemDirectoryW() returns path to "\\system32" directory on all Windows versions. */
+      system32_len = GetSystemDirectoryW(NULL, 0); /* Returns number of WCHARs plus 1 for nul-term. */
+      service_image_path = pci_malloc(a, sizeof(WCHAR) * (system32_len + sizeof("\\drivers\\")-1 + wcslen(service_name) + sizeof(".sys")-1));
+      system32_len = GetSystemDirectoryW(service_image_path, system32_len); /* Now it returns number of WCHARs without nul-term. */
+      if (system32_len && service_image_path[system32_len-1] != L'\\')
+        service_image_path[system32_len++] = L'\\';
+      wcscpy(service_image_path + system32_len, L"drivers\\");
+      wcscpy(service_image_path + system32_len + sizeof("drivers\\")-1, service_name);
+      wcscpy(service_image_path + system32_len + sizeof("drivers\\")-1 + wcslen(service_name), L".sys");
     }
   else if (wcsncmp(service_config->lpBinaryPathName, L"\\SystemRoot\\", sizeof("\\SystemRoot\\")-1) == 0)
     {
-      /* ImagePath is in NT SystemRoot namespace, convert to Win32 path via GetSystemWindowsDirectoryW()/GetWindowsDirectoryW(). */
+      /* ImagePath is in NT SystemRoot namespace, convert to Win32 path via GetSystemWindowsDirectoryW()/GetSystemDirectoryW(). */
+      systemroot_len = get_system_root_path(NULL, 0); /* Returns number of WCHARs plus 1 for nul-term. */
       service_image_path = pci_malloc(a, sizeof(WCHAR) * (systemroot_len + wcslen(service_config->lpBinaryPathName) - (sizeof("\\SystemRoot")-1)));
-      systemroot_len = get_system_root_path(service_image_path, systemroot_len+1);
+      systemroot_len = get_system_root_path(service_image_path, systemroot_len); /* Now it returns number of WCHARs without nul-term. */
+      if (trim_system32 && systemroot_len && (trim_ptr = wcsrchr(service_image_path, L'\\')) != NULL)
+        systemroot_len = trim_ptr - service_image_path;
       if (systemroot_len && service_image_path[systemroot_len-1] != L'\\')
         service_image_path[systemroot_len++] = L'\\';
       wcscpy(service_image_path + systemroot_len, service_config->lpBinaryPathName + sizeof("\\SystemRoot\\")-1);
@@ -525,9 +534,12 @@ retry_service_config:
     }
   else if (service_config->lpBinaryPathName[0] != L'\\')
     {
-      /* ImagePath is relative to the NT SystemRoot namespace, convert to Win32 path via GetSystemWindowsDirectoryW()/GetWindowsDirectoryW(). */
-      service_image_path = pci_malloc(a, sizeof(WCHAR) * (systemroot_len + sizeof("\\") + wcslen(service_config->lpBinaryPathName)));
-      systemroot_len = get_system_root_path(service_image_path, systemroot_len+1);
+      /* ImagePath is relative to the NT SystemRoot namespace, convert to Win32 path via GetSystemWindowsDirectoryW()/GetSystemDirectoryW(). */
+      systemroot_len = get_system_root_path(NULL, 0); /* Returns number of WCHARs plus 1 for nul-term. */
+      service_image_path = pci_malloc(a, sizeof(WCHAR) * (systemroot_len + sizeof("\\")-1 + wcslen(service_config->lpBinaryPathName)));
+      systemroot_len = get_system_root_path(service_image_path, systemroot_len); /* Now it returns number of WCHARs without nul-term. */
+      if (trim_system32 && systemroot_len && (trim_ptr = wcsrchr(service_image_path, L'\\')) != NULL)
+        systemroot_len = trim_ptr - service_image_path;
       if (systemroot_len && service_image_path[systemroot_len-1] != L'\\')
         service_image_path[systemroot_len++] = L'\\';
       wcscpy(service_image_path + systemroot_len, service_config->lpBinaryPathName);
@@ -714,7 +726,7 @@ retry_subname:
             {
               error = GetLastError();
               if (error == 0)
-                a->warning("Cannot read driver %s key for PCI device %s: DevLoader key is stored as unknown type 0x%lx.", subname, devinst_id, unkn_reg_type);
+                a->warning("Cannot read driver %s key for PCI device %s: %s key is stored as unknown type 0x%lx.", subname, devinst_id, subname, unkn_reg_type);
               else if (error != ERROR_FILE_NOT_FOUND)
                 a->warning("Cannot read driver %s key for PCI device %s: %s.", subname, devinst_id, win32_strerror(error));
               else if (strcmp(subname, "minivdd") == 0)
@@ -821,7 +833,7 @@ get_device_driver_path(struct pci_dev *d, SC_HANDLE manager, BOOL manager_suppor
   LPWSTR service_name = NULL;
   ULONG devinst_id_len = 0;
   char *driver_path = NULL;
-  DEVINST devinst = (DEVINST)d->aux;
+  DEVINST devinst = (DEVINST)d->backend_data;
   ULONG problem = 0;
   ULONG status = 0;
   HKEY key = NULL;
@@ -900,6 +912,22 @@ fill_drivers(struct pci_access *a)
 
   if (manager)
     CloseServiceHandle(manager);
+}
+
+static const char *
+res_id_to_str(RESOURCEID res_id)
+{
+  static char hex_res_id[sizeof("0xffffffff")];
+
+  if (res_id == ResType_IO)
+    return "IO";
+  else if (res_id == ResType_Mem)
+    return "MEM";
+  else if (res_id == ResType_IRQ)
+    return "IRQ";
+
+  sprintf(hex_res_id, "0x%lx", res_id);
+  return hex_res_id;
 }
 
 static void
@@ -1031,16 +1059,20 @@ fill_resources(struct pci_dev *d, DEVINST devinst, DEVINSTID_A devinst_id)
 
       prev_res_des = res_des;
 
+      /* Skip other resources early */
+      if (res_id != ResType_IO && res_id != ResType_Mem && res_id != ResType_IRQ)
+        continue;
+
       cr = CM_Get_Res_Des_Data_Size(&res_des_data_size, res_des, 0);
       if (cr != CR_SUCCESS)
         {
-          a->warning("Cannot retrieve resource data of PCI device %s: %s.", devinst_id, cr_strerror(cr));
+          a->warning("Cannot retrieve %s resource data of PCI device %s: %s.", res_id_to_str(res_id), devinst_id, cr_strerror(cr));
           continue;
         }
 
       if (!res_des_data_size)
         {
-          a->warning("Cannot retrieve resource data of PCI device %s: %s.", devinst_id, "Empty data");
+          a->warning("Cannot retrieve %s resource data of PCI device %s: %s.", res_id_to_str(res_id), devinst_id, "Empty data");
           continue;
         }
 
@@ -1048,7 +1080,7 @@ fill_resources(struct pci_dev *d, DEVINST devinst, DEVINSTID_A devinst_id)
       cr = CM_Get_Res_Des_Data(res_des, res_des_data, res_des_data_size, 0);
       if (cr != CR_SUCCESS)
         {
-          a->warning("Cannot retrieve resource data of PCI device %s: %s.", devinst_id, cr_strerror(cr));
+          a->warning("Cannot retrieve %s resource data of PCI device %s: %s.", res_id_to_str(res_id), devinst_id, cr_strerror(cr));
           pci_mfree(res_des_data);
           continue;
         }
@@ -1533,9 +1565,9 @@ scan_devinst_id(struct pci_access *a, DEVINSTID_A devinst_id)
 
   d = pci_get_dev(a, domain, bus, dev, func);
   pci_link_dev(a, d);
-  if (!d->access->aux)
+  if (!d->access->backend_data)
     d->no_config_access = 1;
-  d->aux = (void *)devinst;
+  d->backend_data = (void *)devinst;
 
   /* Parse device id part of devinst id and fill details into pci_dev. */
   if (!a->buscentric)
@@ -1549,7 +1581,7 @@ scan_devinst_id(struct pci_access *a, DEVINSTID_A devinst_id)
     fill_resources(d, devinst, devinst_id);
 
   /*
-   * Set parent field to cfgmgr32 parent devinst handle and aux field to current
+   * Set parent field to cfgmgr32 parent devinst handle and backend_data field to current
    * devinst handle. At later stage in win32_cfgmgr32_scan() when all pci_dev
    * devices are linked, change every devinst handle by pci_dev.
    */
@@ -1621,7 +1653,7 @@ win32_cfgmgr32_scan(struct pci_access *a)
       for (d1 = a->devices; d1; d1 = d1->next)
         {
           for (d2 = a->devices; d2; d2 = d2->next)
-            if ((DEVINST)d1->parent == (DEVINST)d2->aux)
+            if ((DEVINST)d1->parent == (DEVINST)d2->backend_data)
               break;
           d1->parent = d2;
           if (d1->parent)
@@ -1629,9 +1661,9 @@ win32_cfgmgr32_scan(struct pci_access *a)
         }
     }
 
-  /* devinst stored in ->aux is not needed anymore, clear it. */
+  /* devinst stored in ->backend_data is not needed anymore, clear it. */
   for (d = a->devices; d; d = d->next)
-    d->aux = NULL;
+    d->backend_data = NULL;
 
   pci_mfree(devinst_id_list);
 }
@@ -1681,7 +1713,7 @@ win32_cfgmgr32_fill_info(struct pci_dev *d, unsigned int flags)
    * All available flags were filled by win32_cfgmgr32_scan().
    * Filling more flags is possible only from config space.
    */
-  if (!d->access->aux)
+  if (!d->access->backend_data)
     return;
 
   pci_generic_fill_info(d, flags);
@@ -1691,14 +1723,14 @@ static int
 win32_cfgmgr32_read(struct pci_dev *d, int pos, byte *buf, int len)
 {
   struct pci_access *a = d->access;
-  struct pci_access *acfg = a->aux;
-  struct pci_dev *dcfg = d->aux;
+  struct pci_access *acfg = a->backend_data;
+  struct pci_dev *dcfg = d->backend_data;
 
   if (!acfg)
     return pci_emulated_read(d, pos, buf, len);
 
   if (!dcfg)
-    d->aux = dcfg = pci_get_dev(acfg, d->domain, d->bus, d->dev, d->func);
+    d->backend_data = dcfg = pci_get_dev(acfg, d->domain, d->bus, d->dev, d->func);
 
   return pci_read_block(dcfg, pos, buf, len);
 }
@@ -1707,14 +1739,14 @@ static int
 win32_cfgmgr32_write(struct pci_dev *d, int pos, byte *buf, int len)
 {
   struct pci_access *a = d->access;
-  struct pci_access *acfg = a->aux;
-  struct pci_dev *dcfg = d->aux;
+  struct pci_access *acfg = a->backend_data;
+  struct pci_dev *dcfg = d->backend_data;
 
   if (!acfg)
     return 0;
 
   if (!dcfg)
-    d->aux = dcfg = pci_get_dev(acfg, d->domain, d->bus, d->dev, d->func);
+    d->backend_data = dcfg = pci_get_dev(acfg, d->domain, d->bus, d->dev, d->func);
 
   return pci_write_block(dcfg, pos, buf, len);
 }
@@ -1722,7 +1754,7 @@ win32_cfgmgr32_write(struct pci_dev *d, int pos, byte *buf, int len)
 static void
 win32_cfgmgr32_cleanup_dev(struct pci_dev *d)
 {
-  struct pci_dev *dcfg = d->aux;
+  struct pci_dev *dcfg = d->backend_data;
 
   if (dcfg)
     pci_free_dev(dcfg);
@@ -1766,13 +1798,13 @@ win32_cfgmgr32_init(struct pci_access *a)
       return;
     }
 
-  a->aux = acfg;
+  a->backend_data = acfg;
 }
 
 static void
 win32_cfgmgr32_cleanup(struct pci_access *a)
 {
-  struct pci_access *acfg = a->aux;
+  struct pci_access *acfg = a->backend_data;
 
   if (acfg)
     pci_cleanup(acfg);
