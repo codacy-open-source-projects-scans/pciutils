@@ -221,9 +221,11 @@ find_rsdp_address(struct pci_access *a, const char *efisystab, int use_bsd UNUSE
 #if defined(__amd64__) || defined(__i386__)
   struct ecam_access *eacc = a->backend_data;
   struct physmem *physmem = eacc->physmem;
+  long pagesize = eacc->pagesize;
   u64 rsdp_addr;
   u64 addr;
   void *map;
+  u64 ebda;
 #endif
   size_t len;
   FILE *f;
@@ -305,23 +307,39 @@ find_rsdp_address(struct pci_access *a, const char *efisystab, int use_bsd UNUSE
       rsdp_addr = 0;
 
       /* Scan first kB of Extended BIOS Data Area */
-      a->debug("scanning first kB of EBDA...");
-      map = physmem_map(physmem, 0, 0x40E + 1024, 0);
+      a->debug("reading EBDA location from BDA...");
+      map = physmem_map(physmem, 0, 0x40E + 2, 0);
       if (map != (void *)-1)
         {
-          for (addr = 0x40E; addr < 0x40E + 1024; addr += 16)
+          ebda = (u64)physmem_readw((unsigned char *)map + 0x40E) << 4;
+          if (physmem_unmap(physmem, map, 0x40E + 2) != 0)
+            a->debug("unmapping of BDA failed: %s...", strerror(errno));
+          if (ebda >= 0x400)
             {
-              if (check_rsdp((struct acpi_rsdp *)((unsigned char *)map + addr)))
+              a->debug("scanning first kB of EBDA at 0x%" PCI_U64_FMT_X "...", ebda);
+              map = physmem_map(physmem, ebda & ~(pagesize-1), 1024 + (ebda & (pagesize-1)), 0);
+              if (map != (void *)-1)
                 {
-                  rsdp_addr = addr;
-                  break;
+                  for (addr = ebda & (pagesize-1); addr < (ebda & (pagesize-1)) + 1024; addr += 16)
+                    {
+                      if (check_rsdp((struct acpi_rsdp *)((unsigned char *)map + addr)))
+                        {
+                          rsdp_addr = (ebda & ~(pagesize-1)) + addr;
+                          break;
+                        }
+                    }
+                  if (physmem_unmap(physmem, map, 1024 + (ebda & (pagesize-1))) != 0)
+                    a->debug("unmapping of EBDA failed: %s...", strerror(errno));
                 }
+              else
+                a->debug("mapping of EBDA failed: %s...", strerror(errno));
             }
-          if (physmem_unmap(physmem, map, 0x40E + 1024) != 0)
-            a->debug("unmapping of EBDA failed: %s...", strerror(errno));
+          else
+            a->debug("EBDA location 0x%" PCI_U64_FMT_X " is insane...", ebda);
         }
       else
-        a->debug("mapping of EBDA failed: %s...", strerror(errno));
+        a->debug("mapping of BDA failed: %s...", strerror(errno));
+
 
       if (rsdp_addr)
         return rsdp_addr;
@@ -1088,17 +1106,14 @@ ecam_write(struct pci_dev *d, int pos, byte *buf, int len)
 }
 
 struct pci_methods pm_ecam = {
-  "ecam",
-  "Raw memory mapped access using PCIe ECAM interface",
-  ecam_config,
-  ecam_detect,
-  ecam_init,
-  ecam_cleanup,
-  ecam_scan,
-  pci_generic_fill_info,
-  ecam_read,
-  ecam_write,
-  NULL,					/* read_vpd */
-  NULL,					/* init_dev */
-  NULL					/* cleanup_dev */
+  .name = "ecam",
+  .help = "Raw memory mapped access using PCIe ECAM interface",
+  .config = ecam_config,
+  .detect = ecam_detect,
+  .init = ecam_init,
+  .cleanup = ecam_cleanup,
+  .scan = ecam_scan,
+  .fill_info = pci_generic_fill_info,
+  .read = ecam_read,
+  .write = ecam_write,
 };
