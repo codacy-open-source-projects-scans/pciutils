@@ -136,34 +136,56 @@ cap_aer(struct device *d, int where, int type)
     return;
 
   l = get_conf_long(d, where + PCI_ERR_UNCOR_STATUS);
-  printf("\t\tUESta:\tDLP%c SDES%c TLP%c FCP%c CmpltTO%c CmpltAbrt%c UnxCmplt%c RxOF%c "
-	"MalfTLP%c ECRC%c UnsupReq%c ACSViol%c\n",
+  printf("\t\tUESta:\tDLP%c SDES%c TLP%c FCP%c CmpltTO%c CmpltAbrt%c UnxCmplt%c RxOF%c MalfTLP%c\n"
+  "\t\t\tECRC%c UnsupReq%c ACSViol%c UncorrIntErr%c BlockedTLP%c AtomicOpBlocked%c TLPBlockedErr%c\n"
+  "\t\t\tPoisonTLPBlocked%c DMWrReqBlocked%c IDECheck%c MisIDETLP%c PCRC_CHECK%c TLPXlatBlocked%c\n",
 	FLAG(l, PCI_ERR_UNC_DLP), FLAG(l, PCI_ERR_UNC_SDES), FLAG(l, PCI_ERR_UNC_POISON_TLP),
 	FLAG(l, PCI_ERR_UNC_FCP), FLAG(l, PCI_ERR_UNC_COMP_TIME), FLAG(l, PCI_ERR_UNC_COMP_ABORT),
 	FLAG(l, PCI_ERR_UNC_UNX_COMP), FLAG(l, PCI_ERR_UNC_RX_OVER), FLAG(l, PCI_ERR_UNC_MALF_TLP),
-	FLAG(l, PCI_ERR_UNC_ECRC), FLAG(l, PCI_ERR_UNC_UNSUP), FLAG(l, PCI_ERR_UNC_ACS_VIOL));
+	FLAG(l, PCI_ERR_UNC_ECRC), FLAG(l, PCI_ERR_UNC_UNSUP), FLAG(l, PCI_ERR_UNC_ACS_VIOL),
+	FLAG(l, PCI_ERR_UNC_INTERNAL), FLAG(l, PCI_ERR_UNC_MC_BLOCKED_TLP),
+	FLAG(l, PCI_ERR_UNC_ATOMICOP_EGRESS_BLOCKED), FLAG(l, PCI_ERR_UNC_TLP_PREFIX_BLOCKED),
+	FLAG(l, PCI_ERR_UNC_POISONED_TLP_EGRESS), FLAG(l, PCI_ERR_UNC_DMWR_REQ_EGRESS_BLOCKED),
+	FLAG(l, PCI_ERR_UNC_IDE_CHECK), FLAG(l, PCI_ERR_UNC_MISR_IDE_TLP), FLAG(l, PCI_ERR_UNC_PCRC_CHECK),
+	FLAG(l, PCI_ERR_UNC_TLP_XLAT_EGRESS_BLOCKED));
   l = get_conf_long(d, where + PCI_ERR_UNCOR_MASK);
-  printf("\t\tUEMsk:\tDLP%c SDES%c TLP%c FCP%c CmpltTO%c CmpltAbrt%c UnxCmplt%c RxOF%c "
-	"MalfTLP%c ECRC%c UnsupReq%c ACSViol%c\n",
+  printf("\t\tUEMsk:\tDLP%c SDES%c TLP%c FCP%c CmpltTO%c CmpltAbrt%c UnxCmplt%c RxOF%c MalfTLP%c\n"
+  "\t\t\tECRC%c UnsupReq%c ACSViol%c UncorrIntErr%c BlockedTLP%c AtomicOpBlocked%c TLPBlockedErr%c\n"
+  "\t\t\tPoisonTLPBlocked%c DMWrReqBlocked%c IDECheck%c MisIDETLP%c PCRC_CHECK%c TLPXlatBlocked%c\n",
 	FLAG(l, PCI_ERR_UNC_DLP), FLAG(l, PCI_ERR_UNC_SDES), FLAG(l, PCI_ERR_UNC_POISON_TLP),
 	FLAG(l, PCI_ERR_UNC_FCP), FLAG(l, PCI_ERR_UNC_COMP_TIME), FLAG(l, PCI_ERR_UNC_COMP_ABORT),
 	FLAG(l, PCI_ERR_UNC_UNX_COMP), FLAG(l, PCI_ERR_UNC_RX_OVER), FLAG(l, PCI_ERR_UNC_MALF_TLP),
-	FLAG(l, PCI_ERR_UNC_ECRC), FLAG(l, PCI_ERR_UNC_UNSUP), FLAG(l, PCI_ERR_UNC_ACS_VIOL));
+	FLAG(l, PCI_ERR_UNC_ECRC), FLAG(l, PCI_ERR_UNC_UNSUP), FLAG(l, PCI_ERR_UNC_ACS_VIOL),
+	FLAG(l, PCI_ERR_UNC_INTERNAL), FLAG(l, PCI_ERR_UNC_MC_BLOCKED_TLP),
+	FLAG(l, PCI_ERR_UNC_ATOMICOP_EGRESS_BLOCKED), FLAG(l, PCI_ERR_UNC_TLP_PREFIX_BLOCKED),
+	FLAG(l, PCI_ERR_UNC_POISONED_TLP_EGRESS), FLAG(l, PCI_ERR_UNC_DMWR_REQ_EGRESS_BLOCKED),
+	FLAG(l, PCI_ERR_UNC_IDE_CHECK), FLAG(l, PCI_ERR_UNC_MISR_IDE_TLP), FLAG(l, PCI_ERR_UNC_PCRC_CHECK),
+	FLAG(l, PCI_ERR_UNC_TLP_XLAT_EGRESS_BLOCKED));
   l = get_conf_long(d, where + PCI_ERR_UNCOR_SEVER);
-  printf("\t\tUESvrt:\tDLP%c SDES%c TLP%c FCP%c CmpltTO%c CmpltAbrt%c UnxCmplt%c RxOF%c "
-	"MalfTLP%c ECRC%c UnsupReq%c ACSViol%c\n",
+  printf("\t\tUESvrt:\tDLP%c SDES%c TLP%c FCP%c CmpltTO%c CmpltAbrt%c UnxCmplt%c RxOF%c MalfTLP%c\n"
+  "\t\t\tECRC%c UnsupReq%c ACSViol%c UncorrIntErr%c BlockedTLP%c AtomicOpBlocked%c TLPBlockedErr%c\n"
+  "\t\t\tPoisonTLPBlocked%c DMWrReqBlocked%c IDECheck%c MisIDETLP%c PCRC_CHECK%c TLPXlatBlocked%c\n",
 	FLAG(l, PCI_ERR_UNC_DLP), FLAG(l, PCI_ERR_UNC_SDES), FLAG(l, PCI_ERR_UNC_POISON_TLP),
 	FLAG(l, PCI_ERR_UNC_FCP), FLAG(l, PCI_ERR_UNC_COMP_TIME), FLAG(l, PCI_ERR_UNC_COMP_ABORT),
 	FLAG(l, PCI_ERR_UNC_UNX_COMP), FLAG(l, PCI_ERR_UNC_RX_OVER), FLAG(l, PCI_ERR_UNC_MALF_TLP),
-	FLAG(l, PCI_ERR_UNC_ECRC), FLAG(l, PCI_ERR_UNC_UNSUP), FLAG(l, PCI_ERR_UNC_ACS_VIOL));
+	FLAG(l, PCI_ERR_UNC_ECRC), FLAG(l, PCI_ERR_UNC_UNSUP), FLAG(l, PCI_ERR_UNC_ACS_VIOL),
+	FLAG(l, PCI_ERR_UNC_INTERNAL), FLAG(l, PCI_ERR_UNC_MC_BLOCKED_TLP),
+	FLAG(l, PCI_ERR_UNC_ATOMICOP_EGRESS_BLOCKED), FLAG(l, PCI_ERR_UNC_TLP_PREFIX_BLOCKED),
+	FLAG(l, PCI_ERR_UNC_POISONED_TLP_EGRESS), FLAG(l, PCI_ERR_UNC_DMWR_REQ_EGRESS_BLOCKED),
+	FLAG(l, PCI_ERR_UNC_IDE_CHECK), FLAG(l, PCI_ERR_UNC_MISR_IDE_TLP), FLAG(l, PCI_ERR_UNC_PCRC_CHECK),
+	FLAG(l, PCI_ERR_UNC_TLP_XLAT_EGRESS_BLOCKED));
   l = get_conf_long(d, where + PCI_ERR_COR_STATUS);
-  printf("\t\tCESta:\tRxErr%c BadTLP%c BadDLLP%c Rollover%c Timeout%c AdvNonFatalErr%c\n",
+  printf("\t\tCESta:\tRxErr%c BadTLP%c BadDLLP%c Rollover%c Timeout%c AdvNonFatalErr%c "
+  "CorrIntErr%c HeaderOF%c\n",
 	FLAG(l, PCI_ERR_COR_RCVR), FLAG(l, PCI_ERR_COR_BAD_TLP), FLAG(l, PCI_ERR_COR_BAD_DLLP),
-	FLAG(l, PCI_ERR_COR_REP_ROLL), FLAG(l, PCI_ERR_COR_REP_TIMER), FLAG(l, PCI_ERR_COR_REP_ANFE));
+	FLAG(l, PCI_ERR_COR_REP_ROLL), FLAG(l, PCI_ERR_COR_REP_TIMER), FLAG(l, PCI_ERR_COR_REP_ANFE),
+	FLAG(l, PCI_ERR_COR_INTERNAL), FLAG(l, PCI_ERR_COR_HDRLOG_OVER));
   l = get_conf_long(d, where + PCI_ERR_COR_MASK);
-  printf("\t\tCEMsk:\tRxErr%c BadTLP%c BadDLLP%c Rollover%c Timeout%c AdvNonFatalErr%c\n",
+  printf("\t\tCEMsk:\tRxErr%c BadTLP%c BadDLLP%c Rollover%c Timeout%c AdvNonFatalErr%c "
+  "CorrIntErr%c HeaderOF%c\n",
 	FLAG(l, PCI_ERR_COR_RCVR), FLAG(l, PCI_ERR_COR_BAD_TLP), FLAG(l, PCI_ERR_COR_BAD_DLLP),
-	FLAG(l, PCI_ERR_COR_REP_ROLL), FLAG(l, PCI_ERR_COR_REP_TIMER), FLAG(l, PCI_ERR_COR_REP_ANFE));
+	FLAG(l, PCI_ERR_COR_REP_ROLL), FLAG(l, PCI_ERR_COR_REP_TIMER), FLAG(l, PCI_ERR_COR_REP_ANFE),
+	FLAG(l, PCI_ERR_COR_INTERNAL), FLAG(l, PCI_ERR_COR_HDRLOG_OVER));
   l = get_conf_long(d, where + PCI_ERR_CAP);
   printf("\t\tAERCap:\tFirst Error Pointer: %02x, ECRCGenCap%c ECRCGenEn%c ECRCChkCap%c ECRCChkEn%c\n"
 	"\t\t\tMultHdrRecCap%c MultHdrRecEn%c TLPPfxPres%c HdrLogCap%c\n",
@@ -1512,7 +1534,7 @@ static void
 cap_ide(struct device *d, int where)
 {
     const char *hdr_enc_mode[] = { "no", "17:2", "25:2", "33:2", "41:2" };
-    const char *stream_state[] = { "insecure", "secure" };
+    const char *stream_state[] = { "insecure", "reserved", "secure" };
     const char *aggr[] = { "-", "=2", "=4", "=8" };
     u32 l, l2, linknum = 0, selnum = 0, addrnum, off, i, j;
     char buf1[16], buf2[16], offs[16];
@@ -1613,7 +1635,7 @@ cap_ide(struct device *d, int where)
         // Selective IDE Stream Control Register
         l = get_conf_long(d, off);
 
-        printf("\t\t%sSelectiveIDE#%d Ctl: En%c NPR%s PR%s CPL%s PCRC%c HdrEnc=%s Alg='%s' TC%d ID%d%s\n",
+        printf("\t\t%sSelectiveIDE#%d Ctl: En%c NPR%s PR%s CPL%s PCRC%c CFG%c HdrEnc=%s Alg='%s' TC%d ID%d%s\n",
           offstr(offs, off),
           i,
           FLAG(l, PCI_IDE_SEL_CTL_EN),
@@ -1621,6 +1643,7 @@ cap_ide(struct device *d, int where)
           aggr[PCI_IDE_SEL_CTL_TX_AGGR_PR(l)],
           aggr[PCI_IDE_SEL_CTL_TX_AGGR_CPL(l)],
           FLAG(l, PCI_IDE_SEL_CTL_PCRC_EN),
+          FLAG(l, PCI_IDE_SEL_CTL_CFG_EN),
           TABLE(hdr_enc_mode, PCI_IDE_SEL_CTL_PART_ENC(l), buf1),
           ide_alg(buf2, sizeof(buf2), PCI_IDE_SEL_CTL_ALG(l)),
           PCI_IDE_SEL_CTL_TC(l),
@@ -1664,14 +1687,18 @@ cap_ide(struct device *d, int where)
 
             l = get_conf_long(d, off);
             limit = get_conf_long(d, off + 4);
+            limit <<= 32;
+            limit |= (PCI_IDE_SEL_ADDR_1_LIMIT_LOW(l) << 20) | 0xFFFFF;
             base = get_conf_long(d, off + 8);
+            base <<= 32;
+            base |= PCI_IDE_SEL_ADDR_1_BASE_LOW(l) << 20;
             printf("\t\t%sSelectiveIDE#%d RID#%d: Valid%c Base=%lx Limit=%lx\n",
               offstr(offs, off),
               i,
               j,
               FLAG(l, PCI_IDE_SEL_ADDR_1_VALID),
-              (base << 32) | PCI_IDE_SEL_ADDR_1_BASE_LOW(l),
-              (limit << 32) | PCI_IDE_SEL_ADDR_1_LIMIT_LOW(l));
+              base,
+              limit);
             off += 12;
           }
       }
