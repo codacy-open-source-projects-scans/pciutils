@@ -1,7 +1,7 @@
 /*
  *	The PCI Utilities -- Log margining process
  *
- *	Copyright (c) 2023 KNS Group LLC (YADRO)
+ *	Copyright (c) 2023-2024 KNS Group LLC (YADRO)
  *
  *	Can be freely distributed and used under the terms of the GNU GPL v2+.
  *
@@ -38,11 +38,22 @@ margin_log_bdfs(struct pci_dev *down, struct pci_dev *up)
 }
 
 void
+margin_gen_bdfs(struct pci_dev *down, struct pci_dev *up, char *dest, size_t maxlen)
+{
+  if (margin_print_domain)
+    snprintf(dest, maxlen, "%x:%x:%x.%x -> %x:%x:%x.%x", down->domain, down->bus, down->dev,
+             down->func, up->domain, up->bus, up->dev, up->func);
+  else
+    snprintf(dest, maxlen, "%x:%x.%x -> %x:%x.%x", down->bus, down->dev, down->func, up->bus,
+             up->dev, up->func);
+}
+
+void
 margin_log_link(struct margin_link *link)
 {
   margin_log("Link ");
   margin_log_bdfs(link->down_port.dev, link->up_port.dev);
-  margin_log("\nNegotiated Link Width: %d\n", link->down_port.width);
+  margin_log("\nNegotiated Link Width: %d\n", link->down_port.neg_width);
   margin_log("Link Speed: %d.0 GT/s = Gen %d\n", (link->down_port.link_speed - 3) * 16,
              link->down_port.link_speed);
   margin_log("Available receivers: ");
@@ -77,7 +88,8 @@ void
 margin_log_receiver(struct margin_recv *recv)
 {
   margin_log("\nError Count Limit = %d\n", recv->error_limit);
-  margin_log("Parallel Lanes: %d\n\n", recv->parallel_lanes);
+  margin_log("Parallel Lanes: %d\n", recv->parallel_lanes);
+  margin_log("Margining dwell time: %d s\n\n", recv->dwell_time);
 
   margin_log_params(recv->params);
 
@@ -132,8 +144,8 @@ margin_log_margining(struct margin_lanes_data arg)
         }
       margin_log("]");
 
-      u64 lane_eta_s = (arg.steps_lane_total - arg.steps_lane_done) * MARGIN_STEP_MS / 1000;
-      u64 total_eta_s = *arg.steps_utility * MARGIN_STEP_MS / 1000 + lane_eta_s;
+      u64 lane_eta_s = (arg.steps_lane_total - arg.steps_lane_done) * arg.recv->dwell_time;
+      u64 total_eta_s = *arg.steps_utility * arg.recv->dwell_time + lane_eta_s;
       margin_log(" - ETA: %3ds Steps: %3d Total ETA: %3dm %2ds", lane_eta_s, arg.steps_lane_done,
                  total_eta_s / 60, total_eta_s % 60);
 
@@ -150,7 +162,8 @@ margin_log_hw_quirks(struct margin_recv *recv)
         if (recv->recvn == 1)
           margin_log("\nRx(A) is Intel Ice Lake RC port.\n"
                      "Applying next quirks for margining process:\n"
-                     "  - Set MaxVoltageOffset to 12 (120 mV).\n");
+                     "  - Set MaxVoltageOffset to 12 (120 mV);\n"
+                     "  - Force the use of 'one side is the whole' grading mode.\n");
         break;
       default:
         break;

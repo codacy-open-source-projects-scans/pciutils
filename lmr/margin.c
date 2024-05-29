@@ -1,7 +1,7 @@
 /*
  *	The PCI Utilities -- Obtain the margin information of the Link
  *
- *	Copyright (c) 2023 KNS Group LLC (YADRO)
+ *	Copyright (c) 2023-2024 KNS Group LLC (YADRO)
  *
  *	Can be freely distributed and used under the terms of the GNU GPL v2+.
  *
@@ -143,13 +143,17 @@ margin_report_cmd(struct margin_dev *dev, u8 lane, margin_cmd cmd, margin_cmd *r
 }
 
 static void
-margin_apply_hw_quirks(struct margin_recv *recv)
+margin_apply_hw_quirks(struct margin_recv *recv, struct margin_link_args *args)
 {
   switch (recv->dev->hw)
     {
       case MARGIN_ICE_LAKE_RC:
         if (recv->recvn == 1)
-          recv->params->volt_offset = 12;
+          {
+            recv->params->volt_offset = 12;
+            args->recv_args[recv->recvn - 1].t.one_side_is_whole = true;
+            args->recv_args[recv->recvn - 1].t.valid = true;
+          }
         break;
       default:
         break;
@@ -161,7 +165,7 @@ read_params_internal(struct margin_dev *dev, u8 recvn, bool lane_reversal,
                      struct margin_params *params)
 {
   margin_cmd resp;
-  u8 lane = lane_reversal ? dev->width - 1 : 0;
+  u8 lane = lane_reversal ? dev->max_width - 1 : 0;
   margin_set_cmd(dev, lane, NO_COMMAND);
   bool status = margin_report_cmd(dev, lane, REPORT_CAPS(recvn), &resp);
   if (status)
@@ -260,7 +264,7 @@ margin_test_lanes(struct margin_lanes_data arg)
               pci_write_word(arg.recv->dev->dev, ctrl_addr, step_cmd);
             }
         }
-      msleep(MARGIN_STEP_MS);
+      msleep(arg.recv->dwell_time * 1000);
 
       for (int i = 0; i < arg.lanes_n; i++)
         {
@@ -300,7 +304,7 @@ margin_test_lanes(struct margin_lanes_data arg)
 
 /* Awaits that Receiver is prepared through prep_dev function */
 static bool
-margin_test_receiver(struct margin_dev *dev, u8 recvn, struct margin_args *args,
+margin_test_receiver(struct margin_dev *dev, u8 recvn, struct margin_link_args *args,
                      struct margin_results *results)
 {
   u8 *lanes_to_margin = args->lanes;
@@ -312,7 +316,8 @@ margin_test_receiver(struct margin_dev *dev, u8 recvn, struct margin_args *args,
                               .lane_reversal = false,
                               .params = &params,
                               .parallel_lanes = args->parallel_lanes ? args->parallel_lanes : 1,
-                              .error_limit = args->error_limit };
+                              .error_limit = args->common->error_limit,
+                              .dwell_time = args->common->dwell_time };
 
   results->recvn = recvn;
   results->lanes_n = lanes_n;
@@ -340,7 +345,7 @@ margin_test_receiver(struct margin_dev *dev, u8 recvn, struct margin_args *args,
 
   if (recv.parallel_lanes > params.max_lanes + 1)
     recv.parallel_lanes = params.max_lanes + 1;
-  margin_apply_hw_quirks(&recv);
+  margin_apply_hw_quirks(&recv, args);
   margin_log_hw_quirks(&recv);
 
   results->tim_off_reported = params.timing_offset != 0;
@@ -361,15 +366,16 @@ margin_test_receiver(struct margin_dev *dev, u8 recvn, struct margin_args *args,
   for (int i = 0; i < lanes_n; i++)
     {
       results->lanes[i].lane
-        = recv.lane_reversal ? dev->width - lanes_to_margin[i] - 1 : lanes_to_margin[i];
+        = recv.lane_reversal ? dev->max_width - lanes_to_margin[i] - 1 : lanes_to_margin[i];
     }
 
-  if (args->run_margin)
+  if (args->common->run_margin)
     {
-      if (args->verbosity > 0)
+      if (args->common->verbosity > 0)
         margin_log("\n");
-      struct margin_lanes_data lanes_data
-        = { .recv = &recv, .verbosity = args->verbosity, .steps_utility = args->steps_utility };
+      struct margin_lanes_data lanes_data = { .recv = &recv,
+                                              .verbosity = args->common->verbosity,
+                                              .steps_utility = &args->common->steps_utility };
 
       enum margin_dir dir[] = { TIM_LEFT, TIM_RIGHT, VOLT_UP, VOLT_DOWN };
 
@@ -399,15 +405,15 @@ margin_test_receiver(struct margin_dev *dev, u8 recvn, struct margin_args *args,
               lanes_data.ind = timing ? params.ind_left_right_tim : params.ind_up_down_volt;
               lanes_data.dir = dir[i];
               lanes_data.steps_lane_total = timing ? steps_t : steps_v;
-              if (*args->steps_utility >= lanes_data.steps_lane_total)
-                *args->steps_utility -= lanes_data.steps_lane_total;
+              if (args->common->steps_utility >= lanes_data.steps_lane_total)
+                args->common->steps_utility -= lanes_data.steps_lane_total;
               else
-                *args->steps_utility = 0;
+                args->common->steps_utility = 0;
               margin_test_lanes(lanes_data);
             }
           lanes_done += use_lanes;
         }
-      if (args->verbosity > 0)
+      if (args->common->verbosity > 0)
         margin_log("\n");
       if (recv.lane_reversal)
         {
@@ -426,13 +432,8 @@ margin_read_params(struct pci_access *pacc, struct pci_dev *dev, u8 recvn,
   struct pci_cap *cap = pci_find_cap(dev, PCI_CAP_ID_EXP, PCI_CAP_NORMAL);
   if (!cap)
     return false;
-  u8 dev_dir = GET_REG_MASK(pci_read_word(dev, cap->addr + PCI_EXP_FLAGS), PCI_EXP_FLAGS_TYPE);
 
-  bool dev_down;
-  if (dev_dir == PCI_EXP_TYPE_ROOT_PORT || dev_dir == PCI_EXP_TYPE_DOWNSTREAM)
-    dev_down = true;
-  else
-    dev_down = false;
+  bool dev_down = margin_port_is_down(dev);
 
   if (recvn == 0)
     {
@@ -453,25 +454,7 @@ margin_read_params(struct pci_access *pacc, struct pci_dev *dev, u8 recvn,
   struct pci_dev *up = NULL;
   struct margin_link link;
 
-  for (struct pci_dev *p = pacc->devices; p; p = p->next)
-    {
-      if (dev_down && pci_read_byte(dev, PCI_SECONDARY_BUS) == p->bus && dev->domain == p->domain
-          && p->func == 0)
-        {
-          down = dev;
-          up = p;
-          break;
-        }
-      else if (!dev_down && pci_read_byte(p, PCI_SECONDARY_BUS) == dev->bus
-               && dev->domain == p->domain)
-        {
-          down = p;
-          up = dev;
-          break;
-        }
-    }
-
-  if (!down)
+  if (!margin_find_pair(pacc, dev, &down, &up))
     return false;
 
   if (!margin_fill_link(down, up, &link))
@@ -499,8 +482,11 @@ margin_read_params(struct pci_access *pacc, struct pci_dev *dev, u8 recvn,
 }
 
 enum margin_test_status
-margin_process_args(struct margin_dev *dev, struct margin_args *args)
+margin_process_args(struct margin_link *link)
 {
+  struct margin_dev *dev = &link->down_port;
+  struct margin_link_args *args = &link->args;
+
   u8 receivers_n = 2 + 2 * dev->retimers_n;
 
   if (!args->recvs_n)
@@ -524,7 +510,7 @@ margin_process_args(struct margin_dev *dev, struct margin_args *args)
 
   if (!args->lanes_n)
     {
-      args->lanes_n = dev->width;
+      args->lanes_n = dev->neg_width;
       for (int i = 0; i < args->lanes_n; i++)
         args->lanes[i] = i;
     }
@@ -532,7 +518,7 @@ margin_process_args(struct margin_dev *dev, struct margin_args *args)
     {
       for (int i = 0; i < args->lanes_n; i++)
         {
-          if (args->lanes[i] >= dev->width)
+          if (args->lanes[i] >= dev->neg_width)
             {
               return MARGIN_TEST_ARGS_LANES;
             }
@@ -543,8 +529,10 @@ margin_process_args(struct margin_dev *dev, struct margin_args *args)
 }
 
 struct margin_results *
-margin_test_link(struct margin_link *link, struct margin_args *args, u8 *recvs_n)
+margin_test_link(struct margin_link *link, u8 *recvs_n)
 {
+  struct margin_link_args *args = &link->args;
+
   bool status = margin_prep_link(link);
 
   u8 receivers_n = status ? args->recvs_n : 1;

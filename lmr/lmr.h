@@ -1,7 +1,7 @@
 /*
  *	The PCI Utilities -- Margining utility main header
  *
- *	Copyright (c) 2023 KNS Group LLC (YADRO)
+ *	Copyright (c) 2023-2024 KNS Group LLC (YADRO)
  *
  *	Can be freely distributed and used under the terms of the GNU GPL v2+.
  *
@@ -15,19 +15,17 @@
 
 #include "pciutils.h"
 
-#define MARGIN_STEP_MS 1000
-
-#define MARGIN_TIM_MIN       20
-#define MARGIN_TIM_RECOMMEND 30
-#define MARGIN_VOLT_MIN      50
-
 enum margin_hw { MARGIN_HW_DEFAULT, MARGIN_ICE_LAKE_RC };
+
+// in ps
+static const double margin_ui[] = { 62.5, 31.25 };
 
 /* PCI Device wrapper for margining functions */
 struct margin_dev {
   struct pci_dev *dev;
   int lmr_cap_addr;
-  u8 width;
+  u8 neg_width;
+  u8 max_width;
   u8 retimers_n;
   u8 link_speed;
 
@@ -37,11 +35,6 @@ struct margin_dev {
   u8 aspm;
   bool hasd; // Hardware Autonomous Speed Disable
   bool hawd; // Hardware Autonomous Width Disable
-};
-
-struct margin_link {
-  struct margin_dev down_port;
-  struct margin_dev up_port;
 };
 
 /* Specification Revision 5.0 Table 8-11 */
@@ -95,7 +88,7 @@ enum margin_test_status {
 
 /* All lanes Receiver results */
 struct margin_results {
-  u8 recvn; // Receiver Number
+  u8 recvn; // Receiver Number; from 1 to 6
   struct margin_params params;
   bool lane_reversal;
   u8 link_speed;
@@ -104,7 +97,7 @@ struct margin_results {
 
   /* Used to convert steps to physical quantity.
      Calculated from MaxOffset and NumSteps     */
-  double tim_coef;
+  double tim_coef; // from steps to % UI
   double volt_coef;
 
   bool tim_off_reported;
@@ -115,31 +108,56 @@ struct margin_results {
 };
 
 /* pcilmr arguments */
-struct margin_args {
-  u8 steps_t;        // 0 == use NumTimingSteps
-  u8 steps_v;        // 0 == use NumVoltageSteps
-  u8 parallel_lanes; // [1; MaxLanes + 1]
+
+// Common args
+struct margin_com_args {
   u8 error_limit;    // [0; 63]
-  u8 recvs[6];       // Receivers Numbers
-  u8 recvs_n;        // 0 == margin all available receivers
-  u8 lanes[32];      // Lanes to Margin
-  u8 lanes_n;        // 0 == margin all available lanes
   bool run_margin;   // Or print params only
   u8 verbosity;      // 0 - basic;
                      // 1 - add info about remaining time and lanes in progress during margining
+  u64 steps_utility; // For ETA logging
+  bool save_csv;
+  char *dir_for_csv;
+  u8 dwell_time;
+};
 
-  u64 *steps_utility; // For ETA logging
+struct margin_recv_args {
+  // Grading options
+  struct {
+    bool valid;
+    double criteria; // in ps/mV
+    bool one_side_is_whole;
+  } t, v;
+};
+
+struct margin_link_args {
+  struct margin_com_args *common;
+  u8 steps_t;        // 0 == use NumTimingSteps
+  u8 steps_v;        // 0 == use NumVoltageSteps
+  u8 parallel_lanes; // [1; MaxLanes + 1]
+  u8 recvs[6];       // Receivers Numbers
+  u8 recvs_n;        // 0 == margin all available receivers
+  struct margin_recv_args recv_args[6];
+  u8 lanes[32]; // Lanes to Margin
+  u8 lanes_n;   // 0 == margin all available lanes
+};
+
+struct margin_link {
+  struct margin_dev down_port;
+  struct margin_dev up_port;
+  struct margin_link_args args;
 };
 
 /* Receiver structure */
 struct margin_recv {
   struct margin_dev *dev;
-  u8 recvn; // Receiver Number
+  u8 recvn; // Receiver Number; from 1 to 6
   bool lane_reversal;
   struct margin_params *params;
 
   u8 parallel_lanes;
   u8 error_limit;
+  u8 dwell_time;
 };
 
 struct margin_lanes_data {
@@ -159,7 +177,22 @@ struct margin_lanes_data {
   u8 verbosity;
 };
 
+/* margin_args */
+
+enum margin_mode { MARGIN, FULL, SCAN };
+
+extern const char *usage;
+
+struct margin_link *margin_parse_util_args(struct pci_access *pacc, int argc, char **argv,
+                                           enum margin_mode mode, u8 *links_n);
+
 /* margin_hw */
+
+bool margin_port_is_down(struct pci_dev *dev);
+
+/* Results through down/up ports */
+bool margin_find_pair(struct pci_access *pacc, struct pci_dev *dev, struct pci_dev **down_port,
+                      struct pci_dev **up_port);
 
 /* Verify that devices form the link with 16 GT/s or 32 GT/s data rate */
 bool margin_verify_link(struct pci_dev *down_port, struct pci_dev *up_port);
@@ -183,12 +216,11 @@ void margin_restore_link(struct margin_link *link);
 bool margin_read_params(struct pci_access *pacc, struct pci_dev *dev, u8 recvn,
                         struct margin_params *params);
 
-enum margin_test_status margin_process_args(struct margin_dev *dev, struct margin_args *args);
+enum margin_test_status margin_process_args(struct margin_link *link);
 
-/* Awaits that args are prepared through process_args.
+/* Awaits that links are prepared through process_args.
    Returns number of margined Receivers through recvs_n */
-struct margin_results *margin_test_link(struct margin_link *link, struct margin_args *args,
-                                        u8 *recvs_n);
+struct margin_results *margin_test_link(struct margin_link *link, u8 *recvs_n);
 
 void margin_free_results(struct margin_results *results, u8 results_n);
 
@@ -201,8 +233,9 @@ void margin_log(char *format, ...);
 
 /* b:d.f -> b:d.f */
 void margin_log_bdfs(struct pci_dev *down_port, struct pci_dev *up_port);
+void margin_gen_bdfs(struct pci_dev *down_port, struct pci_dev *up_port, char *dest, size_t maxlen);
 
-/* Print Link header (bdfs, width, speed) */
+/* Print Link header (bdfs, neg_width, speed) */
 void margin_log_link(struct margin_link *link);
 
 void margin_log_params(struct margin_params *params);
@@ -220,9 +253,20 @@ void margin_log_hw_quirks(struct margin_recv *recv);
 
 /* margin_results */
 
-void margin_results_print_brief(struct margin_results *results, u8 recvs_n);
+// Min values are taken from PCIe Base Spec Rev. 5.0 Section 8.4.2.
+// Rec values are based on PCIe Arch PHY Test Spec Rev 5.0
+// (Transmitter Electrical Compliance)
 
-void margin_results_save_csv(struct margin_results *results, u8 recvs_n, char *dir,
-                             struct pci_dev *up_port);
+// values in ps
+static const double margin_ew_min[] = { 18.75, 9.375 };
+static const double margin_ew_rec[] = { 23.75, 10.1565 };
+
+static const double margin_eh_min[] = { 15, 15 };
+static const double margin_eh_rec[] = { 21, 19.75 };
+
+void margin_results_print_brief(struct margin_results *results, u8 recvs_n,
+                                struct margin_link_args *args);
+
+void margin_results_save_csv(struct margin_results *results, u8 recvs_n, struct margin_link *link);
 
 #endif
