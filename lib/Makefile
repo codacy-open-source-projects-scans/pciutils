@@ -82,10 +82,12 @@ OBJS += win32-helpers
 endif
 
 ifdef PCI_USE_PHYSMEM
-ifndef PCI_OS_WINDOWS
-ifndef PCI_OS_DJGPP
+ifdef PCI_OS_WINDOWS
+OBJS += physmem-windows
+else ifdef PCI_OS_DJGPP
+OBJS += physmem-djgpp
+else
 OBJS += physmem-posix
-endif
 endif
 endif
 
