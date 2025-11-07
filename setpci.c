@@ -118,7 +118,7 @@ exec_op(struct op *op, struct pci_dev *dev)
   int width = op->width;
   char slot[16];
 
-  sprintf(slot, "%04x:%02x:%02x.%x", dev->domain, dev->bus, dev->dev, dev->func);
+  snprintf(slot, sizeof(slot), "%04x:%02x:%02x.%x", dev->domain, dev->bus, dev->dev, dev->func);
   trace("%s ", slot);
   if (op->cap_type)
     {
@@ -396,7 +396,9 @@ static const struct reg_name pci_reg_names[] = {
   { 0x20027,	0, 0, 0x0, "ECAP_LMR" },
   { 0x20028,	0, 0, 0x0, "ECAP_HIER_ID" },
   { 0x20029,	0, 0, 0x0, "ECAP_NPEM" },
+  { 0x2002a,	0, 0, 0x0, "ECAP_32GT" },
   { 0x20030,	0, 0, 0x0, "ECAP_IDE" },
+  { 0x20031,	0, 0, 0x0, "ECAP_64GT" },
   {       0,    0, 0, 0x0, NULL }
 };
 

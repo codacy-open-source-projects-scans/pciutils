@@ -19,6 +19,42 @@
 #define PROCESS_QUERY_LIMITED_INFORMATION 0x1000
 #endif
 
+#ifndef IMAGE_FILE_MACHINE_ARMNT
+#define IMAGE_FILE_MACHINE_ARMNT 0x01c4
+#endif
+#ifndef IMAGE_FILE_MACHINE_IA64
+#define IMAGE_FILE_MACHINE_IA64 0x0200
+#endif
+#ifndef IMAGE_FILE_MACHINE_AMD64
+#define IMAGE_FILE_MACHINE_AMD64 0x8664
+#endif
+#ifndef IMAGE_FILE_MACHINE_ARM64
+#define IMAGE_FILE_MACHINE_ARM64 0xaa64
+#endif
+
+#ifndef PROCESSOR_ARCHITECTURE_INTEL
+#define PROCESSOR_ARCHITECTURE_INTEL 0
+#endif
+#ifndef PROCESSOR_ARCHITECTURE_ARM
+#define PROCESSOR_ARCHITECTURE_ARM 5
+#endif
+#ifndef PROCESSOR_ARCHITECTURE_IA64
+#define PROCESSOR_ARCHITECTURE_IA64 6
+#endif
+#ifndef PROCESSOR_ARCHITECTURE_AMD64
+#define PROCESSOR_ARCHITECTURE_AMD64 9
+#endif
+#ifndef PROCESSOR_ARCHITECTURE_ARM64
+#define PROCESSOR_ARCHITECTURE_ARM64 12
+#endif
+#ifndef PROCESSOR_ARCHITECTURE_UNKNOWN
+#define PROCESSOR_ARCHITECTURE_UNKNOWN 0xffff
+#endif
+
+#if WINVER < 0x0400
+#define wProcessorArchitecture dwOemId
+#endif
+
 /* Unfortunately some toolchains do not provide this constant. */
 #ifndef SE_IMPERSONATE_NAME
 #define SE_IMPERSONATE_NAME TEXT("SeImpersonatePrivilege")
@@ -36,6 +72,24 @@
 #endif
 #ifndef SE_SACL_AUTO_INHERITED
 #define SE_SACL_AUTO_INHERITED 0x0800
+#endif
+
+/* Older SDK versions do not provide NtCurrentTeb symbol for X86, header files have only function declaration. */
+#if defined(_MSC_VER) && defined(_M_IX86) && !defined(PcTeb)
+#define PcTeb 0x18
+#if _MSC_VER >= 1400
+#pragma intrinsic(__readfsdword)
+__inline struct _TEB *NtCurrentTeb(void) { return (struct _TEB *)__readfsdword(PcTeb); }
+#else
+__inline struct _TEB *NtCurrentTeb(void) { __asm mov eax, fs:[PcTeb] }
+#endif
+#endif
+
+/* Offset to ULONG HardErrorMode field in TEB structure, it is architecture specific. */
+#if defined(_M_IX86) || defined(__i386__)
+#define TEB_HARD_ERROR_MODE_OFFSET 0x0F28
+#elif defined(_M_AMD64) || defined(__x86_64__)
+#define TEB_HARD_ERROR_MODE_OFFSET 0x16B0
 #endif
 
 /*
@@ -103,6 +157,23 @@ win32_strerror(DWORD win32_error_id)
   return buffer;
 }
 
+USHORT
+win32_get_process_machine(void)
+{
+  IMAGE_DOS_HEADER *dos_header;
+  IMAGE_NT_HEADERS *nt_header;
+
+  dos_header = (IMAGE_DOS_HEADER *)GetModuleHandle(NULL);
+  if (dos_header->e_magic != IMAGE_DOS_SIGNATURE)
+    return IMAGE_FILE_MACHINE_UNKNOWN;
+
+  nt_header = (IMAGE_NT_HEADERS *)((BYTE *)dos_header + dos_header->e_lfanew);
+  if (nt_header->Signature != IMAGE_NT_SIGNATURE)
+    return IMAGE_FILE_MACHINE_UNKNOWN;
+
+  return nt_header->FileHeader.Machine;
+}
+
 BOOL
 win32_is_non_nt_system(void)
 {
@@ -114,12 +185,17 @@ win32_is_non_nt_system(void)
 BOOL
 win32_is_32bit_on_64bit_system(void)
 {
+#ifdef _WIN64
+  return FALSE;
+#else
   BOOL (WINAPI *MyIsWow64Process)(HANDLE, PBOOL);
   HMODULE kernel32;
   BOOL is_wow64;
 
   /*
-   * Check for 64-bit system via IsWow64Process() function exported
+   * 32-bit process running on 64-bit system is called Wow64 process.
+   * So AMD64 process running on ARM64 system is not Wow64 process.
+   * Check for Wow64 process via IsWow64Process() function exported
    * from 32-bit kernel32.dll library available on the 64-bit systems.
    * Resolve pointer to this function at runtime as this code path is
    * primary running on 32-bit systems where are not available 64-bit
@@ -138,6 +214,7 @@ win32_is_32bit_on_64bit_system(void)
     return FALSE;
 
   return is_wow64;
+#endif
 }
 
 BOOL
@@ -160,6 +237,111 @@ win32_is_32bit_on_win8_64bit_system(void)
 #endif
 }
 
+BOOL
+win32_is_not_native_process(USHORT *native_machine_ptr)
+{
+  BOOL (WINAPI *MyIsWow64Process2)(HANDLE, PUSHORT, PUSHORT);
+  void (WINAPI *MyGetNativeSystemInfo)(LPSYSTEM_INFO);
+  SYSTEM_INFO system_info;
+  USHORT process_machine;
+  USHORT native_machine;
+  HMODULE kernel32;
+
+  /*
+   * Process is not native if the process architecture does not match the
+   * native machine architecture. Every Wow64 process is not native (which
+   * means 32-bit process on 64-bit system) but there are also non-Wow64
+   * processes which are not native (e.g. AMD64 process on ARM64 system).
+   */
+
+  kernel32 = GetModuleHandle(TEXT("kernel32.dll"));
+  if (!kernel32)
+    return FALSE;
+
+  /*
+   * First try to use IsWow64Process2() function to determinate if the process
+   * is native or not. This function is available since Windows 10.
+   */
+  MyIsWow64Process2 = (void *)GetProcAddress(kernel32, "IsWow64Process2");
+  if (MyIsWow64Process2 && MyIsWow64Process2(GetCurrentProcess(), &process_machine, &native_machine))
+    {
+      /*
+       * Return value from IsWow64Process2() does not indicate if the process
+       * is Wow64, but rather it indicates if the function succeed or not and
+       * filled process_machine and native_machine values.
+       * Process is Wow64 if process_machine is not IMAGE_FILE_MACHINE_UNKNOWN.
+       * For non-Wow64 processes this function does not provide information
+       * about process architecture, so it cannot be used for detecting if the
+       * non-Wow64 process is native or not.
+       */
+      if (process_machine != IMAGE_FILE_MACHINE_UNKNOWN)
+        {
+          if (native_machine_ptr)
+            *native_machine_ptr = native_machine;
+          return TRUE;
+        }
+
+      /*
+       * For non-Wow64 processes retrieve process architecture and compare it
+       * with native machine architecture. This will distinguish between native
+       * and non-native non-Wow64 processes.
+       */
+      process_machine = win32_get_process_machine();
+      if (process_machine != native_machine)
+        {
+          if (native_machine_ptr)
+            *native_machine_ptr = native_machine;
+          return TRUE;
+        }
+      return FALSE;
+    }
+
+  /*
+   * If function IsWow64Process2() is not available or failed then fallback to
+   * IsWow64Process() via win32_is_32bit_on_64bit_system() wrapper. For Wow64
+   * processes is function GetNativeSystemInfo() returning the correct native
+   * machine architecture. For non-Wow64 it is same as GetSystemInfo() and
+   * therefore does NOT return native system information, despite the name
+   * (this happens for example for AMD64 process on ARM64 system).
+   */
+  if (win32_is_32bit_on_64bit_system())
+    {
+      system_info.wProcessorArchitecture = PROCESSOR_ARCHITECTURE_UNKNOWN;
+      MyGetNativeSystemInfo = (void *)GetProcAddress(kernel32, "GetNativeSystemInfo");
+      if (MyGetNativeSystemInfo)
+        MyGetNativeSystemInfo(&system_info);
+      switch (system_info.wProcessorArchitecture)
+        {
+        case PROCESSOR_ARCHITECTURE_INTEL:
+          *native_machine_ptr = IMAGE_FILE_MACHINE_I386;
+          break;
+        case PROCESSOR_ARCHITECTURE_IA64:
+          *native_machine_ptr = IMAGE_FILE_MACHINE_IA64;
+          break;
+        case PROCESSOR_ARCHITECTURE_ARM:
+          *native_machine_ptr = IMAGE_FILE_MACHINE_ARMNT;
+          break;
+        case PROCESSOR_ARCHITECTURE_AMD64:
+          *native_machine_ptr = IMAGE_FILE_MACHINE_AMD64;
+          break;
+        case PROCESSOR_ARCHITECTURE_ARM64:
+          *native_machine_ptr = IMAGE_FILE_MACHINE_ARM64;
+          break;
+        default:
+          *native_machine_ptr = IMAGE_FILE_MACHINE_UNKNOWN;
+        }
+      return TRUE;
+    }
+
+  /*
+   * It looks like that IsWow64Process2() is currently the only function which
+   * can determinate if the non-Wow64 process is native or not. So if the
+   * IsWow64Process2() function is not available (or failed) and process in not
+   * Wow64 then expects that it is native process.
+   */
+  return FALSE;
+}
+
 /*
  * Change error mode of the current thread. If it is not possible then change
  * error mode of the whole process. Always returns previous error mode.
@@ -168,7 +350,9 @@ UINT
 win32_change_error_mode(UINT new_mode)
 {
   SetThreadErrorModeProt MySetThreadErrorMode = NULL;
+  OSVERSIONINFOA version;
   HMODULE kernel32;
+  HMODULE ntdll;
   DWORD old_mode;
 
   /*
@@ -177,11 +361,39 @@ win32_change_error_mode(UINT new_mode)
    */
   kernel32 = GetModuleHandle(TEXT("kernel32.dll"));
   if (kernel32)
-    MySetThreadErrorMode = (SetThreadErrorModeProt)(LPVOID)GetProcAddress(kernel32, "SetThreadErrorMode");
+    MySetThreadErrorMode = (SetThreadErrorModeProt)(void(*)(void))GetProcAddress(kernel32, "SetThreadErrorMode");
+
+  /*
+   * Function RtlSetThreadErrorMode() was introduced in Windows XP x64
+   * and Windows Server 2003. Use GetProcAddress() as it is in ntdll.dll.
+   */
+  if (!MySetThreadErrorMode)
+    {
+      ntdll = GetModuleHandle(TEXT("ntdll.dll"));
+      if (ntdll)
+        MySetThreadErrorMode = (SetThreadErrorModeProt)(void(*)(void))GetProcAddress(ntdll, "RtlSetThreadErrorMode");
+    }
 
   if (MySetThreadErrorMode &&
       MySetThreadErrorMode(new_mode, &old_mode))
     return old_mode;
+
+#ifdef TEB_HARD_ERROR_MODE_OFFSET
+  /*
+   * On Windows NT 4.0+ systems fallback to thread HardErrorMode API.
+   * It depends on architecture specific offset for HardErrorMode field in TEB.
+   */
+  version.dwOSVersionInfoSize = sizeof(version);
+  if (GetVersionExA(&version) &&
+      version.dwPlatformId == VER_PLATFORM_WIN32_NT &&
+      version.dwMajorVersion >= 4)
+    {
+      ULONG *hard_error_mode_ptr = (ULONG *)((BYTE *)NtCurrentTeb() + TEB_HARD_ERROR_MODE_OFFSET);
+      old_mode = *hard_error_mode_ptr;
+      *hard_error_mode_ptr = new_mode;
+      return old_mode;
+    }
+#endif
 
   /*
    * Fallback to function SetErrorMode() which modifies error mode of the
@@ -597,7 +809,7 @@ prepare_security_descriptor_for_set_operation(PSECURITY_DESCRIPTOR security_desc
   if (!advapi32)
     return FALSE;
 
-  MySetSecurityDescriptorControl = (SetSecurityDescriptorControlProt)(LPVOID)GetProcAddress(advapi32, "SetSecurityDescriptorControl");
+  MySetSecurityDescriptorControl = (SetSecurityDescriptorControlProt)(void(*)(void))GetProcAddress(advapi32, "SetSecurityDescriptorControl");
   if (!MySetSecurityDescriptorControl)
     return FALSE;
 
@@ -940,8 +1152,8 @@ win32_find_and_open_process_for_query(LPCSTR exe_file)
    * kernel32.dll library with K32 prefix.
    */
   MyGetModuleFileNameExW = NULL;
-  MyGetProcessImageFileNameW = (GetProcessImageFileNameWProt)(LPVOID)GetProcAddress(kernel32, "K32GetProcessImageFileNameW");
-  MyEnumProcesses = (EnumProcessesProt)(LPVOID)GetProcAddress(kernel32, "K32EnumProcesses");
+  MyGetProcessImageFileNameW = (GetProcessImageFileNameWProt)(void(*)(void))GetProcAddress(kernel32, "K32GetProcessImageFileNameW");
+  MyEnumProcesses = (EnumProcessesProt)(void(*)(void))GetProcAddress(kernel32, "K32EnumProcesses");
   if (!MyGetProcessImageFileNameW || !MyEnumProcesses)
     {
       /*
@@ -960,9 +1172,9 @@ win32_find_and_open_process_for_query(LPCSTR exe_file)
        * Windows XP and higher systems. On older versions is
        * available function GetModuleFileNameExW().
        */
-      MyGetProcessImageFileNameW = (GetProcessImageFileNameWProt)(LPVOID)GetProcAddress(psapi, "GetProcessImageFileNameW");
-      MyGetModuleFileNameExW = (GetModuleFileNameExWProt)(LPVOID)GetProcAddress(psapi, "GetModuleFileNameExW");
-      MyEnumProcesses = (EnumProcessesProt)(LPVOID)GetProcAddress(psapi, "EnumProcesses");
+      MyGetProcessImageFileNameW = (GetProcessImageFileNameWProt)(void(*)(void))GetProcAddress(psapi, "GetProcessImageFileNameW");
+      MyGetModuleFileNameExW = (GetModuleFileNameExWProt)(void(*)(void))GetProcAddress(psapi, "GetModuleFileNameExW");
+      MyEnumProcesses = (EnumProcessesProt)(void(*)(void))GetProcAddress(psapi, "EnumProcesses");
       if ((!MyGetProcessImageFileNameW && !MyGetModuleFileNameExW) || !MyEnumProcesses)
         {
           FreeLibrary(psapi);

@@ -1,7 +1,7 @@
 /*
  *	The PCI Library
  *
- *	Copyright (c) 1997--2024 Martin Mares <mj@ucw.cz>
+ *	Copyright (c) 1997--2025 Martin Mares <mj@ucw.cz>
  *
  *	Can be freely distributed and used under the terms of the GNU GPL v2+
  *
@@ -11,6 +11,10 @@
 #ifndef _PCI_LIB_H
 #define _PCI_LIB_H
 
+#ifdef  __cplusplus
+extern "C" {
+#endif
+
 #ifndef PCI_CONFIG_H
 #include "config.h"
 #endif
@@ -18,7 +22,7 @@
 #include "header.h"
 #include "types.h"
 
-#define PCI_LIB_VERSION 0x030d00
+#define PCI_LIB_VERSION 0x030e00
 
 #ifndef PCI_ABI
 #define PCI_ABI
@@ -52,6 +56,7 @@ enum pci_access_type {
   PCI_ACCESS_MMIO_TYPE1_EXT,		/* MMIO ports, type 1 extended */
   PCI_ACCESS_ECAM,			/* PCIe ECAM via /dev/mem */
   PCI_ACCESS_AOS_EXPANSION,		/* AmigaOS Expansion library */
+  PCI_ACCESS_RT_THREAD_SMART_DM,	/* RT-Thread Smart pci */
   PCI_ACCESS_MAX
 };
 
@@ -312,5 +317,9 @@ enum pci_lookup_mode {
   PCI_LOOKUP_REFRESH_CACHE = 0x400000,	/* Forget all previously cached entries, but still allow updating the cache */
   PCI_LOOKUP_NO_HWDB = 0x800000,	/* Do not ask udev's hwdb */
 };
+
+#ifdef  __cplusplus
+}
+#endif
 
 #endif

@@ -734,11 +734,120 @@ cap_lmr(struct device *d, int where)
 }
 
 static void
+cap_phy_16gt(struct device *d, int where)
+{
+  printf("Physical Layer 16.0 GT/s\n");
+
+  if (verbose < 2)
+    return;
+
+  if (!config_fetch(d, where + PCI_16GT_CAP, 0x18)) {
+    printf("\t\t<unreadable>\n");
+    return;
+  }
+
+  u32 status = get_conf_long(d, where + PCI_16GT_STATUS);
+
+  printf("\t\tPhy16Sta: EquComplete%c EquPhase1%c EquPhase2%c EquPhase3%c LinkEquRequest%c\n",
+         FLAG(status, PCI_16GT_STATUS_EQU_COMP),
+         FLAG(status, PCI_16GT_STATUS_EQU_PHASE1),
+         FLAG(status, PCI_16GT_STATUS_EQU_PHASE2),
+         FLAG(status, PCI_16GT_STATUS_EQU_PHASE3),
+         FLAG(status, PCI_16GT_STATUS_EQU_REQ));
+}
+
+static void
+cap_phy_32gt(struct device *d, int where)
+{
+  static const char * const mod_ts_modes[] = {
+    "PCI Express",
+    "Training Set Messages",
+    "Alternate Protocol Negotiation"
+  };
+  static const char * const enh_link_ctl[] = {
+    "Full Equalization required",
+    "Equalization bypass to highest rate support",
+    "No Equalization Needed",
+    "Modified TS1/TS2 Ordered Sets supported"
+  };
+  char buf[48];
+
+  printf("Physical Layer 32.0 GT/s\n");
+
+  if (verbose < 2)
+    return;
+
+  if (!config_fetch(d, where + PCI_32GT_CAP, 0x1C)) {
+    printf("\t\t<unreadable>\n");
+    return;
+  }
+
+  u32 cap = get_conf_long(d, where + PCI_32GT_CAP);
+  u32 ctl = get_conf_long(d, where + PCI_32GT_CTL);
+  u32 status = get_conf_long(d, where + PCI_32GT_STATUS);
+
+  printf("\t\tPhy32Cap: EqualizationBypass%c NoEqualizationNeeded%c\n"
+         "\t\t\t  ModTsMode0%c ModTsMode1%c ModTsMode2%c\n",
+         FLAG(cap, PCI_32GT_CAP_EQU_BYPASS),
+         FLAG(cap, PCI_32GT_CAP_NO_EQU_NEEDED),
+         FLAG(cap, PCI_32GT_CAP_MOD_TS_MODE_0),
+         FLAG(cap, PCI_32GT_CAP_MOD_TS_MODE_1),
+         FLAG(cap, PCI_32GT_CAP_MOD_TS_MODE_2));
+
+  printf("\t\tPhy32Ctl: EqualizationBypassDis%c NoEqualizationNeededDis%c\n"
+         "\t\t\t  Modified TS Usage Mode: %s\n",
+         FLAG(ctl, PCI_32GT_CTL_EQU_BYPASS_DIS),
+         FLAG(ctl, PCI_32GT_CTL_NO_EQU_NEEDED_DIS),
+         TABLE(mod_ts_modes, PCI_32GT_CTL_MOD_TS_MODE(ctl), buf));
+
+  printf("\t\tPhy32Sta: EquComplete%c EquPhase1%c EquPhase2%c EquPhase3%c LinkEquRequest%c\n"
+         "\t\t\t  Received Enhanced Link Behavior Control: %s\n"
+         "\t\t\t  ModTsRecv%c TxPrecodeOn%c TxPrecodeReq%c NoEqualizationNeededRecv%c\n",
+         FLAG(status, PCI_32GT_STATUS_EQU_COMP),
+         FLAG(status, PCI_32GT_STATUS_EQU_PHASE1),
+         FLAG(status, PCI_32GT_STATUS_EQU_PHASE2),
+         FLAG(status, PCI_32GT_STATUS_EQU_PHASE3),
+         FLAG(status, PCI_32GT_STATUS_EQU_REQ),
+         TABLE(enh_link_ctl, PCI_32GT_STATUS_RCV_ENH_LINK(status), buf),
+         FLAG(status, PCI_32GT_STATUS_MOD_TS),
+         FLAG(status, PCI_32GT_STATUS_TX_PRE_ON),
+         FLAG(status, PCI_32GT_STATUS_TX_PRE_REQ),
+         FLAG(status, PCI_32GT_STATUS_NO_EQU));
+}
+
+static void
+cap_phy_64gt(struct device *d, int where)
+{
+  printf("Physical Layer 64.0 GT/s\n");
+
+  if (verbose < 2)
+    return;
+
+  if (!config_fetch(d, where + PCI_64GT_CAP, 0x0C)) {
+    printf("\t\t<unreadable>\n");
+    return;
+  }
+
+  u32 status = get_conf_long(d, where + PCI_64GT_STATUS);
+
+  printf("\t\tPhy64Sta: EquComplete%c EquPhase1%c EquPhase2%c EquPhase3%c LinkEquRequest%c\n"
+         "\t\t\t  TxPrecodeOn%c TxPrecodeReq%c NoEqualizationNeededRecv%c\n",
+         FLAG(status, PCI_64GT_STATUS_EQU_COMP),
+         FLAG(status, PCI_64GT_STATUS_EQU_PHASE1),
+         FLAG(status, PCI_64GT_STATUS_EQU_PHASE2),
+         FLAG(status, PCI_64GT_STATUS_EQU_PHASE3),
+         FLAG(status, PCI_64GT_STATUS_EQU_REQ),
+         FLAG(status, PCI_64GT_STATUS_TX_PRE_ON),
+         FLAG(status, PCI_64GT_STATUS_TX_PRE_REQ),
+         FLAG(status, PCI_64GT_STATUS_NO_EQU));
+}
+
+static void
 cxl_range(u64 base, u64 size, int n)
 {
   u32 interleave[] = { 0, 256, 4096, 512, 1024, 2048, 8192, 16384 };
-  const char *type[] = { "Volatile", "Non-volatile", "CDAT" };
-  const char *class[] = { "DRAM", "Storage", "CDAT" };
+  const char * const type[] = { "Volatile", "Non-volatile", "CDAT" };
+  const char * const class[] = { "DRAM", "Storage", "CDAT" };
   u16 w;
 
   w = (u16) size;
@@ -943,7 +1052,7 @@ dvsec_cxl_gpf_device(struct device *d, int where)
   printf("\t\tGPF Phase 2 Duration: %u%s\n", duration,
       (time_scale < PCI_CXL_GPF_DEV_1MS) ? "us":
       (time_scale < PCI_CXL_GPF_DEV_1S) ? "ms" :
-      (time_scale == PCI_CXL_GPF_DEV_1S) ? "s" : "<?>");
+      (time_scale <= PCI_CXL_GPF_DEV_10S) ? "s" : "<?>");
 
   l = get_conf_long(d, where + PCI_CXL_GPF_DEV_PHASE2_POW);
   printf("\t\tGPF Phase 2 Power: %umW\n", (unsigned int)l);
@@ -984,7 +1093,7 @@ dvsec_cxl_gpf_port(struct device *d, int where)
   printf("\t\tGPF Phase 1 Timeout: %d%s\n", timeout,
       (time_scale < PCI_CXL_GPF_PORT_1MS) ? "us":
       (time_scale < PCI_CXL_GPF_PORT_1S) ? "ms" :
-      (time_scale == PCI_CXL_GPF_PORT_1S) ? "s" : "<?>");
+      (time_scale <= PCI_CXL_GPF_PORT_10S) ? "s" : "<?>");
 
   w = get_conf_word(d, where + PCI_CXL_GPF_PORT_PHASE2_CTRL);
   time_base = BITS(w, 0, 4);
@@ -1015,7 +1124,7 @@ dvsec_cxl_gpf_port(struct device *d, int where)
   printf("\t\tGPF Phase 2 Timeout: %d%s\n", timeout,
       (time_scale < PCI_CXL_GPF_PORT_1MS) ? "us":
       (time_scale < PCI_CXL_GPF_PORT_1S) ? "ms" :
-      (time_scale == PCI_CXL_GPF_PORT_1S) ? "s" : "<?>");
+      (time_scale <= PCI_CXL_GPF_PORT_10S) ? "s" : "<?>");
 }
 
 static void
@@ -1533,9 +1642,9 @@ static const char *ide_alg(char *buf, size_t len, u32 l)
 static void
 cap_ide(struct device *d, int where)
 {
-    const char *hdr_enc_mode[] = { "no", "17:2", "25:2", "33:2", "41:2" };
-    const char *stream_state[] = { "insecure", "reserved", "secure" };
-    const char *aggr[] = { "-", "=2", "=4", "=8" };
+    const char * const hdr_enc_mode[] = { "no", "17:2", "25:2", "33:2", "41:2" };
+    const char * const stream_state[] = { "insecure", "reserved", "secure" };
+    const char * const aggr[] = { "-", "=2", "=4", "=8" };
     u32 l, l2, linknum = 0, selnum = 0, addrnum, off, i, j;
     char buf1[16], buf2[16], offs[16];
 
@@ -1692,7 +1801,7 @@ cap_ide(struct device *d, int where)
             base = get_conf_long(d, off + 8);
             base <<= 32;
             base |= PCI_IDE_SEL_ADDR_1_BASE_LOW(l) << 20;
-            printf("\t\t%sSelectiveIDE#%d RID#%d: Valid%c Base=%lx Limit=%lx\n",
+            printf("\t\t%sSelectiveIDE#%d RID#%d: Valid%c Base=%" PCI_U64_FMT_X " Limit=%" PCI_U64_FMT_X "\n",
               offstr(offs, off),
               i,
               j,
@@ -1702,6 +1811,103 @@ cap_ide(struct device *d, int where)
             off += 12;
           }
       }
+}
+
+static const char *l0p_exit_latency(int value)
+{
+  static const char * const latencies[] = {
+    "Less than 1us",
+    "1us to less than 2us",
+    "2us to less than 4us",
+    "4us to less than 8us",
+    "8us to less than 16us",
+    "16us to less than 32us",
+    "32us-64us",
+    "More than 64us"
+  };
+
+  if (value >= 0 && value <= 7)
+    return latencies[value];
+  return "Unknown";
+}
+
+static const char *link_width_str(char *buf, size_t buflen, int width)
+{
+  switch (width)
+    {
+      case 0:
+        return "x1";
+      case 1:
+        return "x2";
+      case 2:
+        return "x4";
+      case 3:
+        return "x8";
+      case 4:
+        return "x16";
+      case 7:
+        return "Dynamic";
+      default:
+        snprintf(buf, buflen, "Unknown (%d)", width);
+        return buf;
+    }
+}
+
+static void
+cap_dev3(struct device *d, int where)
+{
+  u32 devcap3;
+  u16 devctl3, devsta3;
+  char buf[16];
+
+  printf("Device 3\n");
+
+  if (verbose < 2)
+    return;
+
+  if (!config_fetch(d, where + PCI_DEV3_DEVCAP3, 4))
+    return;
+  devcap3 = get_conf_long(d, where + PCI_DEV3_DEVCAP3);
+
+  printf("\t\tDevCap3: DMWr Request Routing%c, 14-Bit Tag Completer%c, 14-Bit Tag Requester%c\n"
+         "\t\t\t L0p%c",
+         FLAG(devcap3, PCI_DEV3_DEVCAP3_DMWR_REQ),
+         FLAG(devcap3, PCI_DEV3_DEVCAP3_14BIT_TAG_COMP),
+         FLAG(devcap3, PCI_DEV3_DEVCAP3_14BIT_TAG_REQ),
+         FLAG(devcap3, PCI_DEV3_DEVCAP3_L0P_SUPP));
+
+  if (devcap3 & PCI_DEV3_DEVCAP3_L0P_SUPP)
+    printf(", Port L0p Exit Latency: %s, Retimer L0p Exit Latency: %s",
+           l0p_exit_latency(PCI_DEV3_DEVCAP3_PORT_L0P_EXIT(devcap3)),
+           l0p_exit_latency(PCI_DEV3_DEVCAP3_RETIMER_L0P_EXIT(devcap3)));
+
+  printf("\n\t\t\t UIO Mem RdWr Completer%c, UIO Mem RdWr Requester%c\n",
+         FLAG(devcap3, PCI_DEV3_DEVCAP3_UIO_MEM_RDWR_COMP),
+         FLAG(devcap3, PCI_DEV3_DEVCAP3_UIO_MEM_RDWR_REQ));
+
+  if (!config_fetch(d, where + PCI_DEV3_DEVCTL3, 2))
+    return;
+  devctl3 = get_conf_word(d, where + PCI_DEV3_DEVCTL3);
+
+  printf("\t\tDevCtl3: DMWr Requester%c, DMWr Egress Blocking%c, 14-Bit Tag Requester%c\n"
+         "\t\t\t L0p%c, Target Link Width: %s\n"
+         "\t\t\t UIO Mem RdWr Requester%c, UIO Request 256B Boundary%c\n",
+         FLAG(devctl3, PCI_DEV3_DEVCTL3_DMWR_REQ_EN),
+         FLAG(devctl3, PCI_DEV3_DEVCTL3_DMWR_EGRESS_BLK),
+         FLAG(devctl3, PCI_DEV3_DEVCTL3_14BIT_TAG_REQ_EN),
+         FLAG(devctl3, PCI_DEV3_DEVCTL3_L0P_EN),
+         link_width_str(buf, sizeof(buf), PCI_DEV3_DEVCTL3_TARGET_LINK_WIDTH(devctl3)),
+         FLAG(devctl3, PCI_DEV3_DEVCTL3_UIO_MEM_RDWR_REQ_EN),
+         FLAG(~devctl3, PCI_DEV3_DEVCTL3_UIO_REQ_256B_DIS));
+
+  if (!config_fetch(d, where + PCI_DEV3_DEVSTA3, 2))
+    return;
+  devsta3 = get_conf_word(d, where + PCI_DEV3_DEVSTA3);
+
+  printf("\t\tDevSta3: Initial Link Width: %s, Segment Captured%c, Remote L0p%c\n",
+         link_width_str(buf, sizeof(buf), PCI_DEV3_DEVSTA3_INIT_LINK_WIDTH(devsta3)),
+         FLAG(devsta3, PCI_DEV3_DEVSTA3_SEGMENT_CAPTURED),
+         FLAG(devsta3, PCI_DEV3_DEVSTA3_REMOTE_L0P_SUPP));
 }
 
 void
@@ -1840,7 +2046,7 @@ show_ext_caps(struct device *d, int type)
 	    printf("Data Link Feature <?>\n");
 	    break;
 	  case PCI_EXT_CAP_ID_16GT:
-	    printf("Physical Layer 16.0 GT/s <?>\n");
+	    cap_phy_16gt(d, where);
 	    break;
 	  case PCI_EXT_CAP_ID_LMR:
 	    cap_lmr(d, where);
@@ -1851,14 +2057,20 @@ show_ext_caps(struct device *d, int type)
 	  case PCI_EXT_CAP_ID_NPEM:
 	    printf("Native PCIe Enclosure Management <?>\n");
 	    break;
-      case PCI_EXT_CAP_ID_32GT:
-	    printf("Physical Layer 32.0 GT/s <?>\n");
-        break;
+	  case PCI_EXT_CAP_ID_32GT:
+	    cap_phy_32gt(d, where);
+	    break;
 	  case PCI_EXT_CAP_ID_DOE:
 	    cap_doe(d, where);
 	    break;
 	  case PCI_EXT_CAP_ID_IDE:
 	    cap_ide(d, where);
+	    break;
+	  case PCI_EXT_CAP_ID_64GT:
+	    cap_phy_64gt(d, where);
+	    break;
+	  case PCI_EXT_CAP_ID_DEV3:
+	    cap_dev3(d, where);
 	    break;
 	  default:
 	    printf("Extended Capability ID %#02x\n", id);

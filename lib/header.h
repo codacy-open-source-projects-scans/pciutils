@@ -129,7 +129,7 @@
 #define PCI_IO_BASE_UPPER16	0x30	/* Upper half of I/O addresses */
 #define PCI_IO_LIMIT_UPPER16	0x32
 /* 0x34 same as for htype 0 */
-/* 0x35-0x3b is reserved */
+/* 0x35-0x37 is reserved */
 #define PCI_ROM_ADDRESS1	0x38	/* Same as PCI_ROM_ADDRESS, but for htype 1 */
 /* 0x3c-0x3d are same as for htype 0 */
 #define PCI_BRIDGE_CONTROL	0x3e
@@ -208,6 +208,7 @@
 #define  PCI_CAP_ID_SATA	0x12	/* Serial-ATA HBA */
 #define  PCI_CAP_ID_AF		0x13	/* Advanced features of PCI devices integrated in PCIe root cplx */
 #define  PCI_CAP_ID_EA		0x14	/* Enhanced Allocation */
+#define  PCI_CAP_ID_FPB		0x15	/* Flattening Portal Bridge */
 #define PCI_CAP_LIST_NEXT	1	/* Next capability in the list */
 #define PCI_CAP_FLAGS		2	/* Capability defined flags (16 bits) */
 #define PCI_CAP_SIZEOF		4
@@ -255,8 +256,21 @@
 #define PCI_EXT_CAP_ID_HIER_ID	0x28	/* Hierarchy ID */
 #define PCI_EXT_CAP_ID_NPEM	0x29	/* Native PCIe Enclosure Management */
 #define PCI_EXT_CAP_ID_32GT	0x2a	/* Physical Layer 32.0 GT/s */
+#define PCI_EXT_CAP_ID_ALT_PROT	0x2b	/* Alternate Protocol */
+#define PCI_EXT_CAP_ID_SFI	0x2c	/* System Firmware Intermediary */
 #define PCI_EXT_CAP_ID_DOE	0x2e	/* Data Object Exchange */
+#define PCI_EXT_CAP_ID_DEV3	0x2f	/* Device 3 */
 #define PCI_EXT_CAP_ID_IDE	0x30	/* Integrity and Data Encryption */
+#define PCI_EXT_CAP_ID_64GT	0x31	/* Physical Layer 64.0 GT/s */
+#define PCI_EXT_CAP_ID_FLIT_LOG	0x32	/* Flit Logging */
+#define PCI_EXT_CAP_ID_FLIT_PM	0x33	/* Flit Performance Measurement */
+#define PCI_EXT_CAP_ID_FLIT_EI	0x34	/* Flit Error Injection*/
+#define PCI_EXT_CAP_ID_SVC	0x35	/* Streamlined Virtual Channel */
+#define PCI_EXT_CAP_ID_MMIO_RBL	0x36	/* MMIO Register Block Locator */
+#define PCI_EXT_CAP_ID_NOP_FLIT	0x37	/* NOP Flit Extended Capability */
+#define PCI_EXT_CAP_ID_SIOV	0x38	/* Scalable I/O Virtualization */
+#define PCI_EXT_CAP_ID_128GT	0x39	/* Physical Layer 128.0 GT/s */
+#define PCI_EXT_CAP_ID_CAPT_D	0x3a	/* Captured Data */
 
 /*** Definitions of capabilities ***/
 
@@ -764,6 +778,7 @@
 #define  PCI_EXP_TYPE_ROOT_EC 0xa	/* Root Complex Event Collector */
 #define PCI_EXP_FLAGS_SLOT	0x0100	/* Slot implemented */
 #define PCI_EXP_FLAGS_IRQ	0x3e00	/* Interrupt message number */
+#define PCI_EXP_FLAGS_FLIT_MODE  0x8000  /* FLIT mode supported */
 #define PCI_EXP_DEVCAP		0x4	/* Device capabilities */
 #define  PCI_EXP_DEVCAP_PAYLOAD	0x07	/* Max_Payload_Size */
 #define  PCI_EXP_DEVCAP_PHANTOM	0x18	/* Phantom functions */
@@ -822,6 +837,7 @@
 #define  PCI_EXP_LNKCTL_HWAUTWD	0x0200	/* Hardware Autonomous Width Disable */
 #define  PCI_EXP_LNKCTL_BWMIE	0x0400	/* Bandwidth Mgmt Interrupt Enable */
 #define  PCI_EXP_LNKCTL_AUTBWIE	0x0800	/* Autonomous Bandwidth Mgmt Interrupt Enable */
+#define  PCI_EXP_LNKCTL_FLIT_MODE_DIS  0x2000      /* FLIT mode disable */
 #define PCI_EXP_LNKSTA		0x12	/* Link Status */
 #define  PCI_EXP_LNKSTA_SPEED	0x000f	/* Negotiated Link Speed */
 #define  PCI_EXP_LNKSTA_WIDTH	0x03f0	/* Negotiated Link Width */
@@ -940,6 +956,7 @@
 #define  PCI_EXP_LINKSTA2_CROSSLINK(x)	(((x) >> 8) & 0x3) /* Crosslink Res */
 #define  PCI_EXP_LINKSTA2_COMPONENT(x)	(((x) >> 12) & 0x7) /* Presence */
 #define  PCI_EXP_LINKSTA2_DRS_RCVD	0x8000	/* DRS Msg Received */
+#define  PCI_EXP_LINKSTA2_FLIT_MODE 0x0400  /* FLIT mode active */
 #define PCI_EXP_SLTCAP2			0x34	/* Slot Capabilities */
 #define PCI_EXP_SLTCTL2			0x38	/* Slot Control */
 #define PCI_EXP_SLTSTA2			0x3a	/* Slot Status */
@@ -1367,6 +1384,59 @@
 #define PCI_SEC_LANE_ERR	8	/* Lane Error status register */
 #define PCI_SEC_LANE_EQU_CTRL	12	/* Lane Equalization control register */
 
+/* Physical Layer 16 GT/s Extended Capability */
+#define PCI_16GT_CAP		0x04	/* 16 GT/s Capabilities Register */
+#define PCI_16GT_CTL		0x08	/* 16 GT/s Control Register */
+#define PCI_16GT_STATUS		0x0C	/* 16 GT/s Status Register */
+#define  PCI_16GT_STATUS_EQU_COMP	0x0001	/* Equalization 16 GT/s Complete */
+#define  PCI_16GT_STATUS_EQU_PHASE1	0x0002	/* Equalization 16 GT/s Phase 1 Successful */
+#define  PCI_16GT_STATUS_EQU_PHASE2	0x0004	/* Equalization 16 GT/s Phase 2 Successful */
+#define  PCI_16GT_STATUS_EQU_PHASE3	0x0008	/* Equalization 16 GT/s Phase 3 Successful */
+#define  PCI_16GT_STATUS_EQU_REQ	0x0010	/* Link Equalization Request 16 GT/s */
+#define PCI_16GT_LDPM		0x10	/* 16 GT/s Local Data Parity Mismatch Status Register */
+#define PCI_16GT_FRDPM		0x14	/* 16 GT/s First Retimer Data Parity Mismatch Status Register */
+#define PCI_16GT_SRDPM		0x18	/* 16 GT/s Second Retimer Data Parity Mismatch Status Register */
+
+/* Physical Layer 32 GT/s Extended Capability */
+#define PCI_32GT_CAP		0x04	/* 32 GT/s Capabilities Register */
+#define  PCI_32GT_CAP_EQU_BYPASS	0x0001	/* Equalization bypass to highest rate Supported */
+#define  PCI_32GT_CAP_NO_EQU_NEEDED	0x0002	/* No Equalization Needed Supported */
+#define  PCI_32GT_CAP_MOD_TS_MODE_0	0x0100	/* Modified TS Usage Mode 0 Supported - PCI Express */
+#define  PCI_32GT_CAP_MOD_TS_MODE_1	0x0200	/* Modified TS Usage Mode 1 Supported - Training Set Message */
+#define  PCI_32GT_CAP_MOD_TS_MODE_2	0x0400	/* Modified TS Usage Mode 2 Supported - Alternate Protocol */
+#define PCI_32GT_CTL		0x08	/* 32 GT/s Control Register */
+#define  PCI_32GT_CTL_EQU_BYPASS_DIS	0x1	/* Equalization bypass to highest rate Disable */
+#define  PCI_32GT_CTL_NO_EQU_NEEDED_DIS	0x2	/* No Equalization Needed Disable */
+#define  PCI_32GT_CTL_MOD_TS_MODE(x) (((x) >> 8) & 0x7)	/* Modified TS Usage Mode Selected */
+#define PCI_32GT_STATUS		0x0C	/* 32 GT/s Status Register */
+#define  PCI_32GT_STATUS_EQU_COMP	0x0001	/* Equalization 32 GT/s Complete */
+#define  PCI_32GT_STATUS_EQU_PHASE1	0x0002	/* Equalization 32 GT/s Phase 1 Successful */
+#define  PCI_32GT_STATUS_EQU_PHASE2	0x0004	/* Equalization 32 GT/s Phase 2 Successful */
+#define  PCI_32GT_STATUS_EQU_PHASE3	0x0008	/* Equalization 32 GT/s Phase 3 Successful */
+#define  PCI_32GT_STATUS_EQU_REQ	0x0010	/* Link Equalization Request 32 GT/s */
+#define  PCI_32GT_STATUS_MOD_TS		0x0020	/* Modified TS Received */
+#define  PCI_32GT_STATUS_RCV_ENH_LINK(x) (((x) >> 6) & 0x3)	/* Received Enhanced Link Behavior Control */
+#define  PCI_32GT_STATUS_TX_PRE_ON	0x0100	/* Transmitter Precoding On */
+#define  PCI_32GT_STATUS_TX_PRE_REQ	0x0200	/* Transmitter Precoding Request */
+#define  PCI_32GT_STATUS_NO_EQU 	0x0400	/* No Equalization Needed Received */
+#define PCI_32GT_RXMODTS1	0x10	/* Received Modified TS Data 1 Register */
+#define PCI_32GT_RXMODTS2	0x14	/* Received Modified TS Data 2 Register */
+#define PCI_32GT_TXMODTS1	0x18	/* Transmitted Modified TS Data 1 Register */
+#define PCI_32GT_TXMODTS2	0x1C	/* Transmitted Modified TS Data 2 Register */
+
+/* Physical Layer 64 GT/s Extended Capability */
+#define PCI_64GT_CAP		0x04	/* 64 GT/s Capabilities Register */
+#define PCI_64GT_CTL		0x08	/* 64 GT/s Control Register */
+#define PCI_64GT_STATUS		0x0C	/* 64 GT/s Status Register */
+#define  PCI_64GT_STATUS_EQU_COMP	0x0001	/* Equalization 64 GT/s Complete */
+#define  PCI_64GT_STATUS_EQU_PHASE1	0x0002	/* Equalization 64 GT/s Phase 1 Successful */
+#define  PCI_64GT_STATUS_EQU_PHASE2	0x0004	/* Equalization 64 GT/s Phase 2 Successful */
+#define  PCI_64GT_STATUS_EQU_PHASE3	0x0008	/* Equalization 64 GT/s Phase 3 Successful */
+#define  PCI_64GT_STATUS_EQU_REQ	0x0010	/* Link Equalization Request 64 GT/s */
+#define  PCI_64GT_STATUS_TX_PRE_ON	0x0020	/* Transmitter Precoding On */
+#define  PCI_64GT_STATUS_TX_PRE_REQ	0x0040	/* Transmitter Precoding Request */
+#define  PCI_64GT_STATUS_NO_EQU 	0x0080	/* No Equalization Needed Received */
+
 /* Process Address Space ID */
 #define PCI_PASID_CAP		0x04	/* PASID feature register */
 #define  PCI_PASID_CAP_EXEC	0x02	/* Exec permissions Supported */
@@ -1435,6 +1505,31 @@
 #define PCI_LMR_PORT_STS		0x6 /* Margining Port Status Register */
 #define PCI_LMR_PORT_STS_READY		0x1 /* Margining Ready */
 #define PCI_LMR_PORT_STS_SOFT_READY	0x2 /* Margining Software Ready */
+
+/* Device 3 Extended Capability */
+#define PCI_DEV3_DEVCAP3		0x04	/* Device Capabilities 3 */
+#define  PCI_DEV3_DEVCAP3_DMWR_REQ	0x0001	/* DMWr Request Routing Supported */
+#define  PCI_DEV3_DEVCAP3_14BIT_TAG_COMP	0x0002	/* 14-Bit Tag Completer Supported */
+#define  PCI_DEV3_DEVCAP3_14BIT_TAG_REQ	0x0004	/* 14-Bit Tag Requester Supported */
+#define  PCI_DEV3_DEVCAP3_L0P_SUPP	0x0008	/* L0p Supported */
+#define  PCI_DEV3_DEVCAP3_PORT_L0P_EXIT(x)	(((x) >> 4) & 0x7) /* Port L0p Exit Latency */
+#define  PCI_DEV3_DEVCAP3_RETIMER_L0P_EXIT(x)	(((x) >> 7) & 0x7) /* Retimer L0p Exit Latency */
+#define  PCI_DEV3_DEVCAP3_UIO_MEM_RDWR_COMP	0x0400	/* UIO Mem RdWr Completer Supported */
+#define  PCI_DEV3_DEVCAP3_UIO_MEM_RDWR_REQ	0x0800	/* UIO Mem RdWr Requester Supported */
+
+#define PCI_DEV3_DEVCTL3		0x08	/* Device Control 3 */
+#define  PCI_DEV3_DEVCTL3_DMWR_REQ_EN	0x0001	/* DMWr Requester Enable */
+#define  PCI_DEV3_DEVCTL3_DMWR_EGRESS_BLK	0x0002	/* DMWr Egress Blocking */
+#define  PCI_DEV3_DEVCTL3_14BIT_TAG_REQ_EN	0x0004	/* 14-Bit Tag Requester Enable */
+#define  PCI_DEV3_DEVCTL3_L0P_EN	0x0008	/* L0p Enable */
+#define  PCI_DEV3_DEVCTL3_TARGET_LINK_WIDTH(x)	(((x) >> 4) & 0x7) /* Target Link Width */
+#define  PCI_DEV3_DEVCTL3_UIO_MEM_RDWR_REQ_EN	0x0080	/* UIO Mem RdWr Requester Enable */
+#define  PCI_DEV3_DEVCTL3_UIO_REQ_256B_DIS	0x0100	/* UIO Request 256B Boundary Disable */
+
+#define PCI_DEV3_DEVSTA3		0x0C	/* Device Status 3 */
+#define  PCI_DEV3_DEVSTA3_INIT_LINK_WIDTH(x)	((x) & 0x7) /* Initial Link Width */
+#define  PCI_DEV3_DEVSTA3_SEGMENT_CAPTURED	0x0008	/* Segment Captured */
+#define  PCI_DEV3_DEVSTA3_REMOTE_L0P_SUPP	0x0010	/* Remote L0p Supported */
 
 /* Integrity and Data Encryption Extended Capability */
 #define PCI_IDE_CAP		0x4
@@ -1524,6 +1619,8 @@
 #define PCI_CLASS_STORAGE_ATA		0x0105
 #define PCI_CLASS_STORAGE_SATA		0x0106
 #define PCI_CLASS_STORAGE_SAS		0x0107
+#define PCI_CLASS_STORAGE_NVM		0x0108
+#define PCI_CLASS_STORAGE_UFS		0x0109
 #define PCI_CLASS_STORAGE_OTHER		0x0180
 
 #define PCI_BASE_CLASS_NETWORK		0x02
@@ -1532,6 +1629,10 @@
 #define PCI_CLASS_NETWORK_FDDI		0x0202
 #define PCI_CLASS_NETWORK_ATM		0x0203
 #define PCI_CLASS_NETWORK_ISDN		0x0204
+#define PCI_CLASS_NETWORK_WORLDFLIP	0x0205
+#define PCI_CLASS_NETWORK_PICMG		0x0206
+#define PCI_CLASS_NETWORK_INFINIBAND	0x0207
+#define PCI_CLASS_NETWORK_FABRIC	0x0208
 #define PCI_CLASS_NETWORK_OTHER		0x0280
 
 #define PCI_BASE_CLASS_DISPLAY		0x03
@@ -1564,6 +1665,7 @@
 #define  PCI_CLASS_BRIDGE_RACEWAY	0x0608
 #define  PCI_CLASS_BRIDGE_PCI_SEMI	0x0609
 #define  PCI_CLASS_BRIDGE_IB_TO_PCI	0x060a
+#define  PCI_CLASS_BRIDGE_ADV_SWITCHING	0x060b
 #define  PCI_CLASS_BRIDGE_OTHER		0x0680
 
 #define PCI_BASE_CLASS_COMMUNICATION	0x07
@@ -1571,6 +1673,8 @@
 #define PCI_CLASS_COMMUNICATION_PARALLEL 0x0701
 #define PCI_CLASS_COMMUNICATION_MSERIAL	0x0702
 #define PCI_CLASS_COMMUNICATION_MODEM	0x0703
+#define PCI_CLASS_COMMUNICATION_GPIB	0x0704
+#define PCI_CLASS_COMMUNICATION_SMARTCARD 0x0705
 #define PCI_CLASS_COMMUNICATION_OTHER	0x0780
 
 #define PCI_BASE_CLASS_SYSTEM		0x08
@@ -1579,7 +1683,12 @@
 #define PCI_CLASS_SYSTEM_TIMER		0x0802
 #define PCI_CLASS_SYSTEM_RTC		0x0803
 #define PCI_CLASS_SYSTEM_PCI_HOTPLUG	0x0804
+#define PCI_CLASS_SYSTEM_SD_HOST	0x0805
+#define PCI_CLASS_SYSTEM_IOMMU		0x0806
+#define PCI_CLASS_SYSTEM_ROOT_EVENT_COLL	0x0807
+#define PCI_CLASS_SYSTEM_TIME_CARD	0x0808
 #define PCI_CLASS_SYSTEM_OTHER		0x0880
+#define PCI_CLASS_SYSTEM_TIMING_CARD	0x0899	// Experimental use before official PCI SIG allocation
 
 #define PCI_BASE_CLASS_INPUT		0x09
 #define PCI_CLASS_INPUT_KEYBOARD	0x0900
@@ -1601,6 +1710,7 @@
 #define PCI_CLASS_PROCESSOR_POWERPC	0x0b20
 #define PCI_CLASS_PROCESSOR_MIPS	0x0b30
 #define PCI_CLASS_PROCESSOR_CO		0x0b40
+#define PCI_CLASS_PROCESSOR_OTHER	0x0b80
 
 #define PCI_BASE_CLASS_SERIAL		0x0c
 #define PCI_CLASS_SERIAL_FIREWIRE	0x0c00
@@ -1610,11 +1720,24 @@
 #define PCI_CLASS_SERIAL_FIBER		0x0c04
 #define PCI_CLASS_SERIAL_SMBUS		0x0c05
 #define PCI_CLASS_SERIAL_INFINIBAND	0x0c06
+#define PCI_CLASS_SERIAL_IPMI		0x0c07
+#define PCI_CLASS_SERIAL_SERCOS		0x0c08
+#define PCI_CLASS_SERIAL_CANBUS		0x0c09
+#define PCI_CLASS_SERIAL_MIPS_I3C	0x0c0a
+#define PCI_CLASS_SERIAL_CXL_FMHI	0x0c0b
+#define PCI_CLASS_SERIAL_MMBI		0x0c0c
+#define PCI_CLASS_SERIAL_OTHER		0x0c80
 
 #define PCI_BASE_CLASS_WIRELESS		0x0d
 #define PCI_CLASS_WIRELESS_IRDA		0x0d00
 #define PCI_CLASS_WIRELESS_CONSUMER_IR	0x0d01
 #define PCI_CLASS_WIRELESS_RF		0x0d10
+#define PCI_CLASS_WIRELESS_BLUETOOTH	0x0d11
+#define PCI_CLASS_WIRELESS_BROADBAND	0x0d12
+#define PCI_CLASS_WIRELESS_80211a	0x0d20
+#define PCI_CLASS_WIRELESS_80211b	0x0d21
+#define PCI_CLASS_WIRELESS_CELLULAR	0x0d40
+#define PCI_CLASS_WIRELESS_CELLULAR_PLUS_80211	0x0d41
 #define PCI_CLASS_WIRELESS_OTHER	0x0d80
 
 #define PCI_BASE_CLASS_INTELLIGENT	0x0e
@@ -1625,17 +1748,27 @@
 #define PCI_CLASS_SATELLITE_AUDIO	0x0f01
 #define PCI_CLASS_SATELLITE_VOICE	0x0f03
 #define PCI_CLASS_SATELLITE_DATA	0x0f04
+#define PCI_CLASS_SATELLITE_OTHER	0x0f80
 
 #define PCI_BASE_CLASS_CRYPT		0x10
 #define PCI_CLASS_CRYPT_NETWORK		0x1000
 #define PCI_CLASS_CRYPT_ENTERTAINMENT	0x1010
+#define PCI_CLASS_CRYPT_TPM		0x1020
 #define PCI_CLASS_CRYPT_OTHER		0x1080
 
 #define PCI_BASE_CLASS_SIGNAL		0x11
 #define PCI_CLASS_SIGNAL_DPIO		0x1100
 #define PCI_CLASS_SIGNAL_PERF_CTR	0x1101
 #define PCI_CLASS_SIGNAL_SYNCHRONIZER	0x1110
+#define PCI_CLASS_SIGNAL_MANAGEMENT	0x1120
 #define PCI_CLASS_SIGNAL_OTHER		0x1180
+
+#define PCI_BASE_CLASS_ACCEL		0x12
+#define PCI_CLASS_ACCEL_PROCESSING	0x1200
+#define PCI_CLASS_ACCEL_SDXI		0x1201
+
+#define PCI_BASE_CLASS_INSTRUM		0x13
+#define PCI_CLASS_INSTRUM_NON_ESS	0x1300
 
 #define PCI_CLASS_OTHERS		0xff
 

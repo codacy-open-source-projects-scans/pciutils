@@ -677,13 +677,13 @@ static void show_power_limit(int value, int scale)
 
 static const char *latency_l0s(int value)
 {
-  static const char *latencies[] = { "<64ns", "<128ns", "<256ns", "<512ns", "<1us", "<2us", "<4us", "unlimited" };
+  static const char * const latencies[] = { "<64ns", "<128ns", "<256ns", "<512ns", "<1us", "<2us", "<4us", "unlimited" };
   return latencies[value];
 }
 
 static const char *latency_l1(int value)
 {
-  static const char *latencies[] = { "<1us", "<2us", "<4us", "<8us", "<16us", "<32us", "<64us", "unlimited" };
+  static const char * const latencies[] = { "<1us", "<2us", "<4us", "<8us", "<16us", "<32us", "<64us", "unlimited" };
   return latencies[value];
 }
 
@@ -768,6 +768,8 @@ static char *link_speed(int speed)
         return "32GT/s";
       case 6:
         return "64GT/s";
+      case 8:
+        return "128GT/s";
       default:
 	return "unknown";
     }
@@ -804,7 +806,7 @@ static char *aspm_support(int code)
 
 static const char *aspm_enabled(int code)
 {
-  static const char *desc[] = { "Disabled", "L0s Enabled", "L1 Enabled", "L0s L1 Enabled" };
+  static const char * const desc[] = { "Disabled", "L0s Enabled", "L1 Enabled", "L0s L1 Enabled" };
   return desc[code];
 }
 
@@ -843,14 +845,15 @@ static void cap_express_link(struct device *d, int where, int type)
   if ((type == PCI_EXP_TYPE_ROOT_PORT) || (type == PCI_EXP_TYPE_ENDPOINT) ||
       (type == PCI_EXP_TYPE_LEG_END) || (type == PCI_EXP_TYPE_PCI_BRIDGE))
     printf(" RCB %d bytes,", w & PCI_EXP_LNKCTL_RCB ? 128 : 64);
-  printf(" LnkDisable%c CommClk%c\n\t\t\tExtSynch%c ClockPM%c AutWidDis%c BWInt%c AutBWInt%c\n",
+  printf(" LnkDisable%c CommClk%c\n\t\t\tExtSynch%c ClockPM%c AutWidDis%c BWInt%c AutBWInt%c FltModeDis%c\n",
 	FLAG(w, PCI_EXP_LNKCTL_DISABLE),
 	FLAG(w, PCI_EXP_LNKCTL_CLOCK),
 	FLAG(w, PCI_EXP_LNKCTL_XSYNCH),
 	FLAG(w, PCI_EXP_LNKCTL_CLOCKPM),
 	FLAG(w, PCI_EXP_LNKCTL_HWAUTWD),
 	FLAG(w, PCI_EXP_LNKCTL_BWMIE),
-	FLAG(w, PCI_EXP_LNKCTL_AUTBWIE));
+	FLAG(w, PCI_EXP_LNKCTL_AUTBWIE),
+	FLAG(w, PCI_EXP_LNKCTL_FLIT_MODE_DIS));
 
   w = get_conf_word(d, where + PCI_EXP_LNKSTA);
   sta_speed = w & PCI_EXP_LNKSTA_SPEED;
@@ -871,7 +874,7 @@ static void cap_express_link(struct device *d, int where, int type)
 
 static const char *indicator(int code)
 {
-  static const char *names[] = { "Unknown", "On", "Blink", "Off" };
+  static const char * const names[] = { "Unknown", "On", "Blink", "Off" };
   return names[code];
 }
 
@@ -1194,7 +1197,7 @@ static const char *cap_express_link2_speed_cap(int vector)
    * highest supported rate.
    */
   if (vector & 0x40)
-    return "RsvdP";
+    return "2.5-128GT/s";
   if (vector & 0x20)
     return "2.5-64GT/s";
   if (vector & 0x10)
@@ -1228,6 +1231,8 @@ static const char *cap_express_link2_speed(int type)
         return "32GT/s";
       case 6:
         return "64GT/s";
+      case 8:
+        return "128GT/s";
       default:
 	return "Unknown";
     }
@@ -1366,7 +1371,7 @@ static void cap_express_link2(struct device *d, int where, int type)
   w = get_conf_word(d, where + PCI_EXP_LNKSTA2);
   printf("\t\tLnkSta2: Current De-emphasis Level: %s, EqualizationComplete%c EqualizationPhase1%c\n"
 	"\t\t\t EqualizationPhase2%c EqualizationPhase3%c LinkEqualizationRequest%c\n"
-	"\t\t\t Retimer%c 2Retimers%c CrosslinkRes: %s",
+	"\t\t\t Retimer%c 2Retimers%c CrosslinkRes: %s, FltMode%c",
 	cap_express_link2_deemphasis(PCI_EXP_LINKSTA2_DEEMPHASIS(w)),
 	FLAG(w, PCI_EXP_LINKSTA2_EQU_COMP),
 	FLAG(w, PCI_EXP_LINKSTA2_EQU_PHASE1),
@@ -1375,7 +1380,8 @@ static void cap_express_link2(struct device *d, int where, int type)
 	FLAG(w, PCI_EXP_LINKSTA2_EQU_REQ),
 	FLAG(w, PCI_EXP_LINKSTA2_RETIMER),
 	FLAG(w, PCI_EXP_LINKSTA2_2RETIMERS),
-	cap_express_link2_crosslink_res(PCI_EXP_LINKSTA2_CROSSLINK(w)));
+	cap_express_link2_crosslink_res(PCI_EXP_LINKSTA2_CROSSLINK(w)),
+	FLAG(w, PCI_EXP_LINKSTA2_FLIT_MODE));
 
   if (exp_downstream_port(type) && (l & PCI_EXP_LNKCAP2_DRS)) {
     printf(", DRS%c\n"
@@ -1502,7 +1508,12 @@ cap_express(struct device *d, int where, int cap)
     default:
       printf("Unknown type %d", type);
   }
-  printf(", IntMsgNum %d\n", (cap & PCI_EXP_FLAGS_IRQ) >> 9);
+  printf(", IntMsgNum %d", (cap & PCI_EXP_FLAGS_IRQ) >> 9);
+  if (cap & PCI_EXP_FLAGS_FLIT_MODE)
+    printf(", FLIT Mode Supported\n");
+  else
+    printf("\n");
+
   if (verbose < 2)
     return type;
 

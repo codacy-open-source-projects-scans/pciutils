@@ -127,6 +127,16 @@ Access to the PCI configuration space via Kernel Local Debugging Driver
 kldbgdrv.sys. This driver is not part of the Windows system but is part of
 the Microsoft WinDbg tool. It is required to have kldbgdrv.sys driver installed
 in the system32 directory or to have windbg.exe or kd.exe binary in PATH.
+windbg.exe or kd.exe binary contains embedded kldbgdrv.sys driver which libpci
+can automatically unpack and register. Because of embedded driver usage, it is
+required that architecture of windbg.exe or kd.exe binary matches the system
+architecture, and not the libpci application architecture. Therefore for running
+i386 libpci application on AMD64 system, it is required to have AMD64 version of
+kldbgdrv.sys driver in the native system32 directory or AMD64 version of
+windbg.exe or kd.exe binary in the PATH. i386 versions of these binaries would
+not work. win32-kldbg access method compiled for 32-bit applications supports
+both 32-bit and also 64-bit OS host systems, therefore i386 libpci application
+with win32-kldbg method can access PCI config space also on AMD64 host system.
 kldbgdrv.sys driver has some restrictions. Process needs to have Debug privilege
 and Windows system has to be booted with Debugging option. Debugging option can
 be enabled by calling (takes effect after next boot):
@@ -149,6 +159,15 @@ https://web.archive.org/web/20110214012715/https://www.microsoft.com/whdc/devtoo
 .TP
 .B aos-expansion
 Access method used on PowerPC Amiga running OS4+. Access is made through Expansion.library. It offers read and write access to configuration space.
+.TP
+.B rt-thread-smart
+The
+.B /proc/pci
+filesystem provided by RT-Thread Smart OS. This method requires PCI support
+(with the procfs feature enabled) to be available in the driver subsystem,
+and the DFS v2-based procfs must be mounted in a rootfs-enabled environment.
+It provides access to the standard PCI configuration space, with limited
+information available.
 
 .SH PARAMETERS
 
@@ -177,6 +196,9 @@ Path to the procfs bus tree.
 .TP
 .B sysfs.path
 Path to the sysfs device tree.
+.TP
+.B rt-thread-smart-dm.path
+Path to the rt-thread smart DM procfs device tree.
 .TP
 .B devmem.path
 Path to the /dev/mem device or path to the \\Device\\PhysicalMemory NT section
