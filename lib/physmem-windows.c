@@ -139,7 +139,7 @@ typedef struct _OBJECT_ATTRIBUTES {
 }
 #endif
 
-#define VWIN32_DEVICE_ID 0x0002A /* from vmm.h */
+#define VWIN32_DEVICE_ID 0x002A /* from vmm.h */
 #define WIN32_SERVICE_ID(device, function) (((device) << 16) | (function))
 #define VWIN32_Int31Dispatch WIN32_SERVICE_ID(VWIN32_DEVICE_ID, 0x29)
 #define DPMI_PHYSICAL_ADDRESS_MAPPING 0x0800
@@ -485,9 +485,9 @@ win32_get_proc_address_by_ordinal(HMODULE module, DWORD ordinal, BOOL must_be_wi
       memcpy(module_name, func_ptr, module_name_len);
       module_name[module_name_len] = 0;
 
-      prev_error_mode = win32_change_error_mode(SEM_FAILCRITICALERRORS | SEM_NOOPENFILEERRORBOX);
+      prev_error_mode = win32_change_error_mode(SEM_FAILCRITICALERRORS | SEM_NOOPENFILEERRORBOX, TRUE);
       module = LoadLibraryA(module_name);
-      win32_change_error_mode(prev_error_mode);
+      win32_change_error_mode(prev_error_mode, FALSE);
       if (!module)
         {
           FreeLibrary(module);
@@ -524,8 +524,10 @@ init_physmem_w32skrnl(struct physmem *physmem, struct pci_access *a)
 {
   HMODULE w32skrnl;
   LPVOID (WINAPI *GetThunkBuff)(VOID);
-  OSVERSIONINFOA version;
   LPVOID buf_ptr;
+  DWORD raw_version;
+  USHORT build_num;
+  BOOL build_num_valid;
 
   a->debug("resolving DPMI function via GetThunkBuff() function from w32skrnl.dll...");
   w32skrnl = GetModuleHandleA("w32skrnl.dll");
@@ -544,16 +546,12 @@ init_physmem_w32skrnl(struct physmem *physmem, struct pci_access *a)
       return 0;
     }
 
-  version.dwOSVersionInfoSize = sizeof(version);
-  if (!GetVersionExA(&version))
-    {
-      a->debug("failed: cannot detect version.");
-      errno = EINVAL;
-      return 0;
-    }
+  raw_version = GetVersion();
+  build_num = (raw_version >> 16) & 0x3FFF;
+  build_num_valid = ((raw_version & 0xC0000000) == 0x80000000 && (raw_version & 0xff) < 4);
 
-  /* Versions before 1.1 (1.1.88) are not supported. */
-  if (version.dwMajorVersion < 1 || (version.dwMajorVersion == 1 && version.dwMinorVersion < 1))
+  /* Builds older than 88 (match version 1.1) are not supported. */
+  if (build_num_valid && build_num < 88)
     {
       a->debug("failed: found old incompatible version.");
       errno = ENOENT;
@@ -576,15 +574,11 @@ init_physmem_w32skrnl(struct physmem *physmem, struct pci_access *a)
     }
 
   /*
-   * Versions 1.1 (1.1.88) - 1.15 (1.15.103) have DPMI function at offset 0xa0.
-   * Versions 1.15a (1.15.111) - 1.30c (1.30.172) have DPMI function at offset 0xa4.
+   * Builds 88-103 (match versions 1.1-1.15) have DPMI function at offset 0xa0.
+   * Builds 111-172 (match versions 1.15a-1.30c) have DPMI function at offset 0xa4.
+   * If build number is unavailable then expects the latest version.
    */
-  if (version.dwMajorVersion > 1 ||
-      (version.dwMajorVersion == 1 && version.dwMinorVersion > 15) ||
-      (version.dwMajorVersion == 1 && version.dwMinorVersion == 15 && version.dwBuildNumber >= 111))
-    physmem->w32skrnl_dpmi_lcall_ptr = (LPVOID)((BYTE *)buf_ptr + 0xa4);
-  else
-    physmem->w32skrnl_dpmi_lcall_ptr = (LPVOID)((BYTE *)buf_ptr + 0xa0);
+  physmem->w32skrnl_dpmi_lcall_ptr = (LPVOID)((BYTE *)buf_ptr + ((build_num_valid && build_num < 111) ? 0xa0 : 0xa4));
 
   a->debug("success.");
   return 1;
@@ -954,6 +948,7 @@ physmem_unmap(struct physmem *physmem, void *ptr, size_t length)
   long pagesize = physmem_get_pagesize(physmem);
   MEMORY_BASIC_INFORMATION info;
   NTSTATUS status;
+  DWORD region_size;
 
   if (physmem->section_handle != INVALID_HANDLE_VALUE)
     {
@@ -963,17 +958,30 @@ physmem_unmap(struct physmem *physmem, void *ptr, size_t length)
        * point to the beginning of the mapped memory range.
        *
        * So verify that the ptr argument is the beginning of the mapped range
-       * and length argument is the length of mapped range.
+       * and length argument is the total length of mapped range.
+       *
+       * VirtualQuery() does not have to return whole mapped range, but just
+       * some region subset. So call VirtualQuery() multiple times for each
+       * region subset until we receive size of the whole mapped region range.
        */
 
-      if (VirtualQuery(ptr, &info, sizeof(info)) != sizeof(info))
+      for (region_size = 0; region_size < length; region_size += info.RegionSize)
         {
-          errno = EINVAL;
-          return -1;
+          if (VirtualQuery(ptr + region_size, &info, sizeof(info)) != sizeof(info))
+            {
+              errno = EINVAL;
+              return -1;
+            }
+
+          if (info.AllocationBase != ptr)
+            {
+              errno = EINVAL;
+              return -1;
+            }
         }
 
       /* RegionSize is already page aligned, but length does not have to be. */
-      if (info.AllocationBase != ptr || info.RegionSize != ((length + pagesize-1) & ~(pagesize-1)))
+      if (region_size != ((length + pagesize-1) & ~(pagesize-1)))
         {
           errno = EINVAL;
           return -1;

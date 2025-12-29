@@ -1540,17 +1540,20 @@
 #define  PCI_IDE_CAP_AGGREGATION_SUPP	0x10	/* Aggregation Supported */
 #define  PCI_IDE_CAP_PCRC_SUPP		0x20	/* PCRC Supported */
 #define  PCI_IDE_CAP_IDE_KM_SUPP	0x40	/* IDE_KM Protocol Supported */
+#define  PCI_IDE_CAP_SEL_CFG_SUPP	0x80    /* Selective IDE for Config Request Support */
 #define  PCI_IDE_CAP_ALG(x)	(((x) >> 8) & 0x1f) /* Supported Algorithms */
 #define  PCI_IDE_CAP_ALG_AES_GCM_256	0	/* AES-GCM 256 key size, 96b MAC */
 #define  PCI_IDE_CAP_LINK_TC_NUM(x)		(((x) >> 13) & 0x7) /* Number of TCs Supported for Link IDE */
 #define  PCI_IDE_CAP_SELECTIVE_STREAMS_NUM(x)	(((x) >> 16) & 0xff) /* Number of Selective IDE Streams Supported */
 #define  PCI_IDE_CAP_TEE_LIMITED_SUPP   0x1000000 /* TEE-Limited Stream Supported */
+#define  PCI_IDE_CAP_XT_SUPP		0x2000000 /* XT Supported */
 #define PCI_IDE_CTL		0x8
 #define  PCI_IDE_CTL_FLOWTHROUGH_IDE	0x4	/* Flow-Through IDE Stream Enabled */
 #define PCI_IDE_LINK_STREAM		0xC
 /* Link IDE Stream block, up to PCI_IDE_CAP_LINK_TC_NUM */
 /* Link IDE Stream Control Register */
 #define  PCI_IDE_LINK_CTL_EN		0x1	/* Link IDE Stream Enable */
+#define  PCI_IDE_LINK_CTL_XT		0x2	/* Link IDE Stream XT Enable */
 #define  PCI_IDE_LINK_CTL_TX_AGGR_NPR(x)(((x) >> 2) & 0x3) /* Tx Aggregation Mode NPR */
 #define  PCI_IDE_LINK_CTL_TX_AGGR_PR(x)	(((x) >> 4) & 0x3) /* Tx Aggregation Mode PR */
 #define  PCI_IDE_LINK_CTL_TX_AGGR_CPL(x)(((x) >> 6) & 0x3) /* Tx Aggregation Mode CPL */
@@ -1567,6 +1570,7 @@
 #define  PCI_IDE_SEL_CAP_BLOCKS_NUM(x)	((x) & 0xf) /* Number of Address Association Register Blocks */
 /* Selective IDE Stream Control Register */
 #define  PCI_IDE_SEL_CTL_EN		0x1	/* Selective IDE Stream Enable */
+#define  PCI_IDE_SEL_CTL_XT		0x2	/* Selective IDE Stream XT Enable */
 #define  PCI_IDE_SEL_CTL_TX_AGGR_NPR(x)	(((x) >> 2) & 0x3) /* Tx Aggregation Mode NPR */
 #define  PCI_IDE_SEL_CTL_TX_AGGR_PR(x)	(((x) >> 4) & 0x3) /* Tx Aggregation Mode PR */
 #define  PCI_IDE_SEL_CTL_TX_AGGR_CPL(x)	(((x) >> 6) & 0x3) /* Tx Aggregation Mode CPL */
@@ -1576,6 +1580,7 @@
 #define  PCI_IDE_SEL_CTL_ALG(x)		(((x) >> 14) & 0x1f) /* Selected Algorithm */
 #define  PCI_IDE_SEL_CTL_TC(x)		(((x) >> 19) & 0x7)  /* Traffic Class */
 #define  PCI_IDE_SEL_CTL_DEFAULT	0x400000 /* Default Stream */
+#define  PCI_IDE_SEL_CTL_TEE_LIMITED	0x800000 /* TEE-Limited Stream */
 #define  PCI_IDE_SEL_CTL_ID(x)		(((x) >> 24) & 0xff) /* Stream ID */
 /* Selective IDE Stream Status Register */
 #define  PCI_IDE_SEL_STS_STATUS(x)	((x) & 0xf) /* Selective IDE Stream State */
@@ -1592,6 +1597,149 @@
 #define  PCI_IDE_SEL_ADDR_1_LIMIT_LOW(x)(((x) >> 20) & 0xfff) /* Memory Limit Lower */
 /* IDE Address Association Register 2 is "Memory Limit Upper" */
 /* IDE Address Association Register 3 is "Memory Base Upper" */
+
+/* MMIO Register Block Locator Capability */
+#define PCI_MRBL_CAP		0x04	/* MRBL Capabilities Register */
+#define PCI_MRBL_REG		0x08	/* MRBL Locator Register base */
+#define PCI_MRBL_REG_SIZE	0x08	/* MRBL Locator Register size */
+#define  PCI_MRBL_CAP_STRUCT_LEN(x)	((x) & 0xFFF) /* MRBL Structure Length in bytes */
+#define  PCI_MRBL_LOC_BIR(x)		((x) & 0x7) /* MRBL Locator BIR */
+#define  PCI_MRBL_LOC_BID(x)		(((x) >> 8) & 0xff) /* MRBL Locator Block ID */
+#define  PCI_MRBL_LOC_OFF_LOW(x)	((x) & 0xffff0000) /* MRBL Locator Offset Low */
+
+/* Flit Error Injection Capability */
+#define PCI_FLIT_EI_CAP		0x04	/* Error Injection Capability Register */
+#define PCI_FLIT_EI_CTL1	0x08	/* Flit Error Injection Control 1 Register */
+#define  PCI_FLIT_EI_CTL1_EN	0x0001	/* Flit Error Injection Enable */
+#define  PCI_FLIT_EI_CTL1_TX	0x0002	/* Inject Errors on Transmitted Flits */
+#define  PCI_FLIT_EI_CTL1_RX	0x0004	/* Inject Errors on Received Flits */
+#define  PCI_FLIT_EI_CTL1_25GT	0x0040 /* Flit Error Injection Enable 2.5 GT/s Data Rate */
+#define  PCI_FLIT_EI_CTL1_50GT	0x0080 /* Flit Error Injection Enable 5.0 GT/s Data Rate */
+#define  PCI_FLIT_EI_CTL1_80GT	0x0100 /* Flit Error Injection Enable 8.0 GT/s Data Rate */
+#define  PCI_FLIT_EI_CTL1_16GT	0x0200 /* Flit Error Injection Enable 16.0 GT/s Data Rate */
+#define  PCI_FLIT_EI_CTL1_32GT	0x0400 /* Flit Error Injection Enable 32.0 GT/s Data Rate */
+#define  PCI_FLIT_EI_CTL1_64GT	0x0800 /* Flit Error Injection Enable 64.0 GT/s Data Rate */
+#define  PCI_FLIT_EI_CTL1_NUM_ERR(x) (((x) >> 16) & 0x1F) /* Number of Errors Injected */
+#define  PCI_FLIT_EI_CTL1_SPACING(x) (((x) >> 21) & 0xFF) /* Spacing Between Injected Errors */
+#define  PCI_FLIT_EI_CTL1_FLIT_TY(x) (((x) >> 29) & 0x3) /* Injection on Flit Type */
+#define PCI_FLIT_EI_CTL2	0x0C	/* Flit Error Injection Control 2 Register */
+#define  PCI_FLIT_EI_CTL2_CONSEC(x) ((x) & 0x7) /* Consecutive Error Injection */
+#define  PCI_FLIT_EI_CTL2_TYPE(x) (((x) >> 3) & 0x3) /* Error Type Being Injected */
+#define  PCI_FLIT_EI_CTL2_OFFS(x) (((x) >> 5) & 0x7F) /* Error Offset within Flit */
+#define  PCI_FLIT_EI_CTL2_MAG(x) (((x) >> 12) & 0xFF) /* Error Magnitude */
+#define PCI_FLIT_EI_STS		0x10	/* Flit Error Injection Status Register */
+#define  PCI_FLIT_EI_STS_TX(x) ((x) & 0x3) /* Flit Error Tx Injection Status */
+#define  PCI_FLIT_EI_STS_RX(x) (((x) >> 2) & 0x3) /* Flit Error Rx Injection Status */
+#define PCI_FLIT_EI_OS_CTL1	0x14	/* Ordered Set Error Injection Control 1 Register */
+#define  PCI_FLIT_EI_OS_CTL1_EN	0x00000001 /* Ordered Set Error Injection Enable */
+#define  PCI_FLIT_EI_OS_CTL1_TX	0x00000002 /* Inject Errors on Transmitted Ordered Sets */
+#define  PCI_FLIT_EI_OS_CTL1_RX	0x00000004 /* Inject Errors on Received Ordered Sets */
+#define  PCI_FLIT_EI_OS_CTL1_NUM(x) (((x) >> 3) & 0x1F) /* Number of Errors injected */
+#define  PCI_FLIT_EI_OS_CTL1_SPACING(x) (((x) >> 8) & 0xFF) /* Spacing Between Injected Errors */
+#define  PCI_FLIT_EI_OS_CTL1_TS0	0x00010000 /* Inject Error on TS0 OS */
+#define  PCI_FLIT_EI_OS_CTL1_TS1	0x00020000 /* Inject Error on TS1 OS */
+#define  PCI_FLIT_EI_OS_CTL1_TS2	0x00040000 /* Inject Error on TS2 OS */
+#define  PCI_FLIT_EI_OS_CTL1_SKP	0x00080000 /* Inject Error on SKP OS */
+#define  PCI_FLIT_EI_OS_CTL1_EIEOS	0x00100000 /* Inject Error on EIEOS OS */
+#define  PCI_FLIT_EI_OS_CTL1_EIOS	0x00200000 /* Inject Error on EIOS OS */
+#define  PCI_FLIT_EI_OS_CTL1_SDS	0x00400000 /* Inject Error on SDS OS */
+#define  PCI_FLIT_EI_OS_CTL1_POLL	0x00800000 /* Inject Error in Polling State */
+#define  PCI_FLIT_EI_OS_CTL1_CONF	0x01000000 /* Inject errors in the Configuration LTSSM state */
+#define  PCI_FLIT_EI_OS_CTL1_L0		0x02000000 /* Inject errors in the L0 LTSSM state */
+#define  PCI_FLIT_EI_OS_CTL1_NOEQ	0x04000000 /* Inject errors in the Recovery LTSSM states */
+#define  PCI_FLIT_EI_OS_CTL1_EQ01	0x08000000 /* Inject errors Recovery.Equalization Phase 0 and Phase 1 */
+#define  PCI_FLIT_EI_OS_CTL1_EQ2	0x10000000 /* Inject errors Recovery.Equalization Phase 2 */
+#define  PCI_FLIT_EI_OS_CTL1_EQ3	0x20000000 /* Inject errors Recovery.Equalization Phase 3 */
+#define PCI_FLIT_EI_OS_CTL2	0x18	/* Ordered Set Error Injection Control 2 Register */
+#define  PCI_FLIT_EI_OS_CTL2_BYTES(x) ((x) & 0xFFFF) /* Error Injection Bytes */
+#define  PCI_FLIT_EI_OS_CTL2_LANES(x) (((x) >> 16) & 0xFFFF) /* Lane Number for Error Injection */
+#define PCI_FLIT_EI_OS_TX	0x1C	/* Ordered Set Error Tx Injection Status Registe */
+#define  PCI_FLIT_EI_OS_TX_TS0(x) ((x) & 0x3) /* Tx Injection Status TS0 */
+#define  PCI_FLIT_EI_OS_TX_TS1(x) (((x) >> 2) & 0x3) /* Tx Injection Status TS1 */
+#define  PCI_FLIT_EI_OS_TX_TS2(x) (((x) >> 4) & 0x3) /* Tx Injection Status TS2 */
+#define  PCI_FLIT_EI_OS_TX_SKP(x) (((x) >> 6) & 0x3) /* Tx Injection Status SKP */
+#define  PCI_FLIT_EI_OS_TX_EIEOS(x) (((x) >> 8) & 0x3) /* Tx Injection Status EIEOS */
+#define  PCI_FLIT_EI_OS_TX_EIOS(x) (((x) >> 10) & 0x3) /* Tx Injection Status EIOS */
+#define  PCI_FLIT_EI_OS_TX_SDS(x) (((x) >> 12) & 0x3) /* Tx Injection Status SDS */
+#define  PCI_FLIT_EI_OS_TX_POLL(x) (((x) >> 14) & 0x3) /* Tx Injection Status Polling */
+#define  PCI_FLIT_EI_OS_TX_CONF(x) (((x) >> 16) & 0x3) /* Tx Injection Status Configuration */
+#define  PCI_FLIT_EI_OS_TX_L0(x) (((x) >> 18) & 0x3) /* Tx Injection Status L0 */
+#define  PCI_FLIT_EI_OS_TX_NOEQ(x) (((x) >> 20) & 0x3) /* Tx Injection Status non-EQ Recovery */
+#define  PCI_FLIT_EI_OS_TX_EQ01(x) (((x) >> 22) & 0x3) /* Tx Injection Status Recovery.Equalization Phase 0 and 1 */
+#define  PCI_FLIT_EI_OS_TX_EQ2(x) (((x) >> 24) & 0x3) /* Tx Injection Status Recovery.Equalization Phase 2 */
+#define  PCI_FLIT_EI_OS_TX_EQ3(x) (((x) >> 26) & 0x3) /* Tx Injection Status Recovery.Equalization Phase 3 */
+#define PCI_FLIT_EI_OS_RX	0x20	/* Ordered Set Error Rx Injection Status Register */
+#define  PCI_FLIT_EI_OS_RX_TS0(x) ((x) & 0x3) /* Rx Injection Status TS0 */
+#define  PCI_FLIT_EI_OS_RX_TS1(x) (((x) >> 2) & 0x3) /* Rx Injection Status TS1 */
+#define  PCI_FLIT_EI_OS_RX_TS2(x) (((x) >> 4) & 0x3) /* Rx Injection Status TS2 */
+#define  PCI_FLIT_EI_OS_RX_SKP(x) (((x) >> 6) & 0x3) /* Rx Injection Status SKP */
+#define  PCI_FLIT_EI_OS_RX_EIEOS(x) (((x) >> 8) & 0x3) /* Rx Injection Status EIEOS */
+#define  PCI_FLIT_EI_OS_RX_EIOS(x) (((x) >> 10) & 0x3) /* Rx Injection Status EIOS */
+#define  PCI_FLIT_EI_OS_RX_SDS(x) (((x) >> 12) & 0x3) /* Rx Injection Status SDS */
+#define  PCI_FLIT_EI_OS_RX_POLL(x) (((x) >> 14) & 0x3) /* Rx Injection Status Polling */
+#define  PCI_FLIT_EI_OS_RX_CONF(x) (((x) >> 16) & 0x3) /* Rx Injection Status Configuration */
+#define  PCI_FLIT_EI_OS_RX_L0(x) (((x) >> 18) & 0x3) /* Rx Injection Status L0 */
+#define  PCI_FLIT_EI_OS_RX_NOEQ(x) (((x) >> 20) & 0x3) /* Rx Injection Status non-EQ Recovery */
+#define  PCI_FLIT_EI_OS_RX_EQ01(x) (((x) >> 22) & 0x3) /* Rx Injection Status Recovery.Equalization Phase 0 and 1 */
+#define  PCI_FLIT_EI_OS_RX_EQ2(x) (((x) >> 24) & 0x3) /* Rx Injection Status Recovery.Equalization Phase 2 */
+#define  PCI_FLIT_EI_OS_RX_EQ3(x) (((x) >> 26) & 0x3) /* Rx Injection Status Recovery.Equalization Phase 3 */
+
+/* Flit Logging Extended Capability */
+#define PCI_FLIT_LOG_ERR1		0x04	/* Flit Error Log 1 Register */
+#define  PCI_FLIT_LOG_ERR1_VLD 0x00000001 /* Flit Error Log Valid */
+#define  PCI_FLIT_LOG_ERR1_WIDTH(x) (((x) >> 1) & 0x7) /* Flit Error Link Width */
+#define  PCI_FLIT_LOG_ERR1_OFFS(x) (((x) >> 4) & 0xf) /* Flit Offset from the Last Logged Flit in Error */
+#define  PCI_FLIT_LOG_ERR1_CONS(x) (((x) >> 8) & 0x1f) /* Consecutive Flit Error after the Last Flit Error */
+#define  PCI_FLIT_LOG_ERR1_MORE  0x00002000 /* More Entries for Flit Error Log Register are Valid */
+#define  PCI_FLIT_LOG_ERR1_UNREC 0x00004000 /* Unrecognized Flit */
+#define  PCI_FLIT_LOG_ERR1_UNCOR 0x00008000 /* FEC Uncorrectable Error in Flit */
+#define  PCI_FLIT_LOG_ERR1_PAR_GRP0(x) (((x) >> 16) & 0xff) /* Syndrome Parity for ECC Group 0 */
+#define  PCI_FLIT_LOG_ERR1_CHK_GRP0(x) (((x) >> 24) & 0xff) /* Syndrome Check for ECC Group 0 */
+#define PCI_FLIT_LOG_ERR2		0x08	/* Flit Error Log 2 Register */
+#define  PCI_FLIT_LOG_ERR2_PAR_GRP1(x) ((x) & 0xff) /* Syndrome Parity for ECC Group 1 */
+#define  PCI_FLIT_LOG_ERR2_CHK_GRP1(x) (((x) >> 8) & 0xff) /* Syndrome Check for ECC Group 1 */
+#define  PCI_FLIT_LOG_ERR2_PAR_GRP2(x) (((x) >> 16) & 0xff) /* Syndrome Parity for ECC Group 2 */
+#define  PCI_FLIT_LOG_ERR2_CHK_GRP2(x) (((x) >> 24) & 0xff) /* Syndrome Check for ECC Group 2 */
+#define PCI_FLIT_LOG_CNT_CTL	0x0C	/* Flit Error Counter Control Register */
+#define  PCI_FLIT_LOG_CNT_CTL_EN 0x00000001 /* Flit Error Counter Enable */
+#define  PCI_FLIT_LOG_CNT_CTL_INT 0x00000002 /* Flit Error Counter Interrupt Enable */
+#define  PCI_FLIT_LOG_CNT_CTL_EVNT(x) (((x) >> 2) & 0x3) /* Events to count */
+#define  PCI_FLIT_LOG_CNT_CTL_TRG(x) (((x) >> 4) & 0xff) /* Trigger Event on Error Count */
+#define PCI_FLIT_LOG_CNT_STS	0x0E	/* Flit Error Counter Status Register */
+#define  PCI_FLIT_LOG_CNT_STS_WIDTH(x) ((x) & 0x7) /* Link Width when Error Counter Started */
+#define  PCI_FLIT_LOG_CNT_STS_INT 0x00000004 /* Interrupt Generated based on Trigger Event Count */
+#define  PCI_FLIT_LOG_CNT_STS_CNT(x) (((x) >> 8) & 0xFF) /* Flit Error Counter */
+#define PCI_FLIT_LOG_MES_CTL	0x10	/* FBER Measurement Control Register */
+#define  PCI_FLIT_LOG_MES_CTL_EN	0x00000001 /* FBER Measurement Enable */
+#define  PCI_FLIT_LOG_MES_CTL_CLR	0x00000002 /* Clear FBER Counters */
+#define  PCI_FLIT_LOG_MES_CTL_GRAN(x) (((x) >> 2) & 0x3) /* Granularity of per-Lane Error reported */
+#define PCI_FLIT_LOG_MES_STS1	0x14	/* FBER Measurement Status 1 Register */
+#define PCI_FLIT_LOG_MES_STS2	0x18	/* FBER Measurement Status 2 Register */
+#define  PCI_FLIT_LOG_MES_STS2_INV(x) ((x) & 0xffff) /* Invalid Flit Counter */
+#define PCI_FLIT_LOG_MES_STS3	0x1C	/* FBER Measurement Status 3 Register */
+#define  PCI_FLIT_LOG_MES_STS3_LN0(x) ((x) & 0xffff) /* Lane #0 Correctable Counter */
+#define  PCI_FLIT_LOG_MES_STS3_LN1(x) (((x) >> 16) & 0xffff) /* Lane #1 Correctable Counter */
+#define PCI_FLIT_LOG_MES_STS4	0x20	/* FBER Measurement Status 4 Register */
+#define  PCI_FLIT_LOG_MES_STS4_LN2(x) ((x) & 0xffff) /* Lane #2 Correctable Counter */
+#define  PCI_FLIT_LOG_MES_STS4_LN3(x) (((x) >> 16) & 0xffff) /* Lane #3 Correctable Counter */
+#define PCI_FLIT_LOG_MES_STS5	0x24	/* FBER Measurement Status 5 Register */
+#define  PCI_FLIT_LOG_MES_STS5_LN4(x) ((x) & 0xffff) /* Lane #4 Correctable Counter */
+#define  PCI_FLIT_LOG_MES_STS5_LN5(x) (((x) >> 16) & 0xffff) /* Lane #5 Correctable Counter */
+#define PCI_FLIT_LOG_MES_STS6	0x28	/* FBER Measurement Status 6 Register */
+#define  PCI_FLIT_LOG_MES_STS6_LN6(x) ((x) & 0xffff) /* Lane #6 Correctable Counter */
+#define  PCI_FLIT_LOG_MES_STS6_LN7(x) (((x) >> 16) & 0xffff) /* Lane #7 Correctable Counter */
+#define PCI_FLIT_LOG_MES_STS7	0x2C	/* FBER Measurement Status 7 Register */
+#define  PCI_FLIT_LOG_MES_STS7_LN8(x) ((x) & 0xffff) /* Lane #8 Correctable Counter */
+#define  PCI_FLIT_LOG_MES_STS7_LN9(x) (((x) >> 16) & 0xffff) /* Lane #9 Correctable Counter */
+#define PCI_FLIT_LOG_MES_STS8	0x30	/* FBER Measurement Status 8 Register */
+#define  PCI_FLIT_LOG_MES_STS8_LN10(x) ((x) & 0xffff) /* Lane #10 Correctable Counter */
+#define  PCI_FLIT_LOG_MES_STS8_LN11(x) (((x) >> 16) & 0xffff) /* Lane #11 Correctable Counter */
+#define PCI_FLIT_LOG_MES_STS9	0x34	/* FBER Measurement Status 9 Register */
+#define  PCI_FLIT_LOG_MES_STS9_LN12(x) ((x) & 0xffff) /* Lane #12 Correctable Counter */
+#define  PCI_FLIT_LOG_MES_STS9_LN13(x) (((x) >> 16) & 0xffff) /* Lane #13 Correctable Counter */
+#define PCI_FLIT_LOG_MES_STS10	0x38	/* FBER Measurement Status 10 Register */
+#define  PCI_FLIT_LOG_MES_STS10_LN14(x) ((x) & 0xffff) /* Lane #14 Correctable Counter */
+#define  PCI_FLIT_LOG_MES_STS10_LN15(x) (((x) >> 16) & 0xffff) /* Lane #15 Correctable Counter */
 
 /*
  * The PCI interface treats multi-function devices as independent
@@ -1772,7 +1920,7 @@
 
 #define PCI_CLASS_OTHERS		0xff
 
-/* Several ID's we need in the library */
+/* Several IDs we need in the library */
 
 #define PCI_VENDOR_ID_INTEL		0x8086
 #define PCI_VENDOR_ID_COMPAQ		0x0e11

@@ -1665,7 +1665,7 @@ cap_ide(struct device *d, int where)
     if (l & PCI_IDE_CAP_SELECTIVE_IDE_SUPP)
         selnum = PCI_IDE_CAP_SELECTIVE_STREAMS_NUM(l) + 1;
 
-    printf("\t\tIDECap: Lnk=%d Sel=%d FlowThru%c PartHdr%c Aggr%c PCPC%c IDE_KM%c Alg='%s' TCs=%d TeeLim%c\n",
+    printf("\t\tIDECap: Lnk=%d Sel=%d FlowThru%c PartHdr%c Aggr%c PCPC%c IDE_KM%c SelCfg%c Alg='%s' TCs=%d TeeLim%c XT%c\n",
       linknum,
       selnum,
       FLAG(l, PCI_IDE_CAP_FLOWTHROUGH_IDE_SUPP),
@@ -1673,9 +1673,11 @@ cap_ide(struct device *d, int where)
       FLAG(l, PCI_IDE_CAP_AGGREGATION_SUPP),
       FLAG(l, PCI_IDE_CAP_PCRC_SUPP),
       FLAG(l, PCI_IDE_CAP_IDE_KM_SUPP),
+      FLAG(l, PCI_IDE_CAP_SEL_CFG_SUPP),
       ide_alg(buf2, sizeof(buf2), PCI_IDE_CAP_ALG(l)),
       PCI_IDE_CAP_LINK_TC_NUM(l) + 1,
-      FLAG(l, PCI_IDE_CAP_TEE_LIMITED_SUPP)
+      FLAG(l, PCI_IDE_CAP_TEE_LIMITED_SUPP),
+      FLAG(l, PCI_IDE_CAP_XT_SUPP)
       );
 
     l = get_conf_long(d, where + PCI_IDE_CTL);
@@ -1697,10 +1699,11 @@ cap_ide(struct device *d, int where)
           {
             // Link IDE Stream Control Register
             l = get_conf_long(d, off);
-            printf("\t\t%sLinkIDE#%d Ctl: En%c NPR%s PR%s CPL%s PCRC%c HdrEnc=%s Alg='%s' TC%d ID%d\n",
+            printf("\t\t%sLinkIDE#%d Ctl: En%c XT%c NPR%s PR%s CPL%s PCRC%c HdrEnc=%s Alg='%s' TC%d ID%d\n",
               offstr(offs, off),
               i,
               FLAG(l, PCI_IDE_LINK_CTL_EN),
+              FLAG(l, PCI_IDE_LINK_CTL_XT),
               aggr[PCI_IDE_LINK_CTL_TX_AGGR_NPR(l)],
               aggr[PCI_IDE_LINK_CTL_TX_AGGR_PR(l)],
               aggr[PCI_IDE_LINK_CTL_TX_AGGR_CPL(l)],
@@ -1744,10 +1747,11 @@ cap_ide(struct device *d, int where)
         // Selective IDE Stream Control Register
         l = get_conf_long(d, off);
 
-        printf("\t\t%sSelectiveIDE#%d Ctl: En%c NPR%s PR%s CPL%s PCRC%c CFG%c HdrEnc=%s Alg='%s' TC%d ID%d%s\n",
+        printf("\t\t%sSelectiveIDE#%d Ctl: En%c XT%c NPR%s PR%s CPL%s PCRC%c CFG%c HdrEnc=%s Alg='%s' TC%d TeeLim%c ID%d%s\n",
           offstr(offs, off),
           i,
           FLAG(l, PCI_IDE_SEL_CTL_EN),
+          FLAG(l, PCI_IDE_SEL_CTL_XT),
           aggr[PCI_IDE_SEL_CTL_TX_AGGR_NPR(l)],
           aggr[PCI_IDE_SEL_CTL_TX_AGGR_PR(l)],
           aggr[PCI_IDE_SEL_CTL_TX_AGGR_CPL(l)],
@@ -1756,6 +1760,7 @@ cap_ide(struct device *d, int where)
           TABLE(hdr_enc_mode, PCI_IDE_SEL_CTL_PART_ENC(l), buf1),
           ide_alg(buf2, sizeof(buf2), PCI_IDE_SEL_CTL_ALG(l)),
           PCI_IDE_SEL_CTL_TC(l),
+          FLAG(l, PCI_IDE_SEL_CTL_TEE_LIMITED),
           PCI_IDE_SEL_CTL_ID(l),
           (l & PCI_IDE_SEL_CTL_DEFAULT) ? " Default" : ""
           );
@@ -1908,6 +1913,373 @@ cap_dev3(struct device *d, int where)
          link_width_str(buf, sizeof(buf), PCI_DEV3_DEVSTA3_INIT_LINK_WIDTH(devsta3)),
          FLAG(devsta3, PCI_DEV3_DEVSTA3_SEGMENT_CAPTURED),
          FLAG(devsta3, PCI_DEV3_DEVSTA3_REMOTE_L0P_SUPP));
+}
+
+static const char *mmio_rbl_bid(char *buf, size_t buflen, u8 bid)
+{
+  switch (bid)
+    {
+      case 0x00:
+        return "Empty";
+      case 0x01:
+        return "MCAP";
+      case 0xFF:
+        return "MDVS";
+      default:
+        snprintf(buf, buflen, "Reserved (%u)", bid);
+        return buf;
+    }
+}
+
+static void
+cap_mmio_rbl(struct device *d, int where)
+{
+  char buf[16];
+
+  printf("MMIO Register Block Locator\n");
+
+  if (verbose < 2)
+    return;
+
+  if (!config_fetch(d, where + PCI_MRBL_CAP, 0x0C))
+    {
+      printf("\t\t<unreadable>\n");
+      return;
+    }
+
+  u32 cap = get_conf_long(d, where + PCI_MRBL_CAP);
+  u32 mrbllen = PCI_MRBL_CAP_STRUCT_LEN(cap);
+
+  if (!config_fetch(d, where + PCI_MRBL_REG, mrbllen))
+    {
+      printf("\t\t<unreadable>\n");
+      return;
+    }
+
+  u32 num_mrbl = (mrbllen / 8) - 1;
+
+  for (u32 i = 0; i < num_mrbl; i++)
+    {
+      unsigned int pos = where + PCI_MRBL_REG + i * PCI_MRBL_REG_SIZE;
+      if (!config_fetch(d, pos, PCI_MRBL_REG_SIZE))
+	{
+	  printf("\t\t<unreadable>\n");
+	  return;
+	}
+
+      u32 lo = get_conf_long(d, pos);
+      u32 hi = get_conf_long(d, pos + 0x04);
+
+      u64 offs = ((u64) hi << 32) | PCI_MRBL_LOC_OFF_LOW(lo);
+
+      printf("\t\tLocator%u: BIR: BAR%u, ID: %s, offset: %016" PCI_U64_FMT_X "\n",
+	     i,
+	     PCI_MRBL_LOC_BIR(lo),
+	     mmio_rbl_bid(buf, sizeof(buf), PCI_MRBL_LOC_BID(lo)),
+	     offs);
+    }
+}
+
+static const char *flit_ei_flit_type_str(char *buf, size_t buflen, u8 type)
+{
+  switch (type)
+    {
+      case 0b000:
+        return "any";
+      case 0b001:
+        return "any non-IDLE";
+      case 0b010:
+        return "only payload";
+      case 0b011:
+        return "only NOP";
+      case 0b100:
+        return "only IDLE";
+      case 0b101:
+        return "only payload+seq";
+      case 0b110:
+        return "only payload+1seq";
+      default:
+        snprintf(buf, buflen, "Unknown (%u)", type);
+        return buf;
+    }
+}
+
+static const char *flit_ei_consec_str(char *buf, size_t buflen, u8 consec)
+{
+  switch (consec)
+    {
+      case 0b000:
+        return "none";
+      case 0b001:
+      case 0b010:
+      case 0b011:
+      case 0b101:
+      case 0b110:
+        snprintf(buf, buflen, "%u", consec);
+        return buf;
+      case 0b111:
+        return "pseudo-random";
+      default:
+        snprintf(buf, buflen, "Unknown (%u)", consec);
+        return buf;
+    }
+}
+
+static const char *flit_ei_err_type_str(char *buf, size_t buflen, u8 type)
+{
+  switch (type)
+    {
+      case 0b00:
+        return "random";
+      case 0b01:
+        return "correctable single group";
+      case 0b10:
+        return "correctable three groups";
+      case 0b011:
+        return "uncorrectable";
+      default:
+        snprintf(buf, buflen, "Unknown (%u)", type);
+        return buf;
+    }
+}
+
+static const char *flit_ei_sts_str(char *buf, size_t buflen, u8 sts)
+{
+  switch (sts)
+    {
+      case 0b00:
+        return "not started";
+      case 0b001:
+        return "started";
+      case 0b010:
+        return "completed";
+      case 0b011:
+        return "error";
+      default:
+        snprintf(buf, buflen, "Unknown (%u)", sts);
+        return buf;
+    }
+}
+
+static void
+cap_flit_ei(struct device *d, int where)
+{
+  char buf0[16], buf1[16], buf2[16];
+
+  printf("Flit Error Injection\n");
+
+  if (verbose < 2)
+    return;
+
+  if (!config_fetch(d, where + PCI_FLIT_EI_CAP, 32))
+    return;
+
+  u32 flit_ei_ctl1 = get_conf_long(d, where + PCI_FLIT_EI_CTL1);
+
+  printf("\t\tFlitEiCtl1:   En%c Tx%c Rx%c 2.5GT/s%c 5.0GT/s%c 8.0GT/s%c 16.0GT/s%c 32.0GT/s%c 64.0GT/s%c\n"
+         "\t\t\t      Number of errors: %u, Spacing between errors: %u, Flit Type: %s\n",
+         FLAG(flit_ei_ctl1, PCI_FLIT_EI_CTL1_EN),
+         FLAG(flit_ei_ctl1, PCI_FLIT_EI_CTL1_TX),
+         FLAG(flit_ei_ctl1, PCI_FLIT_EI_CTL1_RX),
+         FLAG(flit_ei_ctl1, PCI_FLIT_EI_CTL1_25GT),
+         FLAG(flit_ei_ctl1, PCI_FLIT_EI_CTL1_50GT),
+         FLAG(flit_ei_ctl1, PCI_FLIT_EI_CTL1_80GT),
+         FLAG(flit_ei_ctl1, PCI_FLIT_EI_CTL1_16GT),
+         FLAG(flit_ei_ctl1, PCI_FLIT_EI_CTL1_32GT),
+         FLAG(flit_ei_ctl1, PCI_FLIT_EI_CTL1_64GT),
+         PCI_FLIT_EI_CTL1_NUM_ERR(flit_ei_ctl1),
+         PCI_FLIT_EI_CTL1_SPACING(flit_ei_ctl1),
+         flit_ei_flit_type_str(buf0, sizeof(buf0), PCI_FLIT_EI_CTL1_FLIT_TY(flit_ei_ctl1)));
+
+  u32 flit_ei_ctl2 = get_conf_long(d, where + PCI_FLIT_EI_CTL2);
+  printf("\t\tFlitEiCtl2:   Consecutive: %s, Type: %s, Offset: %u, Magnitude: %u\n",
+         flit_ei_consec_str(buf0, sizeof(buf0), PCI_FLIT_EI_CTL2_CONSEC(flit_ei_ctl2)),
+         flit_ei_err_type_str(buf1, sizeof(buf1), PCI_FLIT_EI_CTL2_TYPE(flit_ei_ctl2)),
+         PCI_FLIT_EI_CTL2_OFFS(flit_ei_ctl2),
+         PCI_FLIT_EI_CTL2_MAG(flit_ei_ctl2));
+
+  u32 flit_ei_sts = get_conf_long(d, where + PCI_FLIT_EI_STS);
+  printf("\t\tFlitEiSts:    Tx: %s, Rx: %s\n",
+         flit_ei_sts_str(buf0, sizeof(buf0), PCI_FLIT_EI_STS_TX(flit_ei_sts)),
+         flit_ei_sts_str(buf1, sizeof(buf1), PCI_FLIT_EI_STS_RX(flit_ei_sts)));
+
+  u32 flit_ei_os_ctl1 = get_conf_long(d, where + PCI_FLIT_EI_OS_CTL1);
+  printf("\t\tFlitEiOsCtl1: En%c Tx%c Rx%c TS0%c TS1%c TS2%c SKP%c EIEOS%c EIOS%c\n"
+        "\t\t\t      SDS%c Poll%c Conf%c L0%c NoEq%c Eq01%c Eq2%c Eq3%c\n",
+        FLAG(flit_ei_os_ctl1, PCI_FLIT_EI_OS_CTL1_EN),
+        FLAG(flit_ei_os_ctl1, PCI_FLIT_EI_OS_CTL1_TX),
+        FLAG(flit_ei_os_ctl1, PCI_FLIT_EI_OS_CTL1_RX),
+        FLAG(flit_ei_os_ctl1, PCI_FLIT_EI_OS_CTL1_TS0),
+        FLAG(flit_ei_os_ctl1, PCI_FLIT_EI_OS_CTL1_TS1),
+        FLAG(flit_ei_os_ctl1, PCI_FLIT_EI_OS_CTL1_TS2),
+        FLAG(flit_ei_os_ctl1, PCI_FLIT_EI_OS_CTL1_SKP),
+        FLAG(flit_ei_os_ctl1, PCI_FLIT_EI_OS_CTL1_EIEOS),
+        FLAG(flit_ei_os_ctl1, PCI_FLIT_EI_OS_CTL1_EIOS),
+        FLAG(flit_ei_os_ctl1, PCI_FLIT_EI_OS_CTL1_SDS),
+        FLAG(flit_ei_os_ctl1, PCI_FLIT_EI_OS_CTL1_POLL),
+        FLAG(flit_ei_os_ctl1, PCI_FLIT_EI_OS_CTL1_CONF),
+        FLAG(flit_ei_os_ctl1, PCI_FLIT_EI_OS_CTL1_L0),
+        FLAG(flit_ei_os_ctl1, PCI_FLIT_EI_OS_CTL1_NOEQ),
+        FLAG(flit_ei_os_ctl1, PCI_FLIT_EI_OS_CTL1_EQ01),
+        FLAG(flit_ei_os_ctl1, PCI_FLIT_EI_OS_CTL1_EQ2),
+        FLAG(flit_ei_os_ctl1, PCI_FLIT_EI_OS_CTL1_EQ3));
+
+  u32 flit_ei_os_ctl2 = get_conf_long(d, where + PCI_FLIT_EI_OS_CTL2);
+  printf("\t\tFlitEiOsCtl2: Bytes: %04x, Lanes: %04x\n",
+         PCI_FLIT_EI_OS_CTL2_BYTES(flit_ei_os_ctl2),
+         PCI_FLIT_EI_OS_CTL2_LANES(flit_ei_os_ctl2));
+
+  u32 flit_ei_os_tx = get_conf_long(d, where + PCI_FLIT_EI_OS_TX);
+  printf("\t\tFlitEiOsTx:   TS0: %s, TS1: %s, TS2: %s\n",
+         flit_ei_sts_str(buf0, sizeof(buf0), PCI_FLIT_EI_OS_TX_TS0(flit_ei_os_tx)),
+         flit_ei_sts_str(buf1, sizeof(buf1), PCI_FLIT_EI_OS_TX_TS1(flit_ei_os_tx)),
+         flit_ei_sts_str(buf2, sizeof(buf2), PCI_FLIT_EI_OS_TX_TS2(flit_ei_os_tx)));
+  printf("\t\t\t      SKP: %s, EIEOS: %s, EIOS: %s\n",
+         flit_ei_sts_str(buf0, sizeof(buf0), PCI_FLIT_EI_OS_TX_SKP(flit_ei_os_tx)),
+         flit_ei_sts_str(buf1, sizeof(buf1), PCI_FLIT_EI_OS_TX_EIEOS(flit_ei_os_tx)),
+         flit_ei_sts_str(buf2, sizeof(buf2), PCI_FLIT_EI_OS_TX_EIOS(flit_ei_os_tx)));
+  printf("\t\t\t      SDS: %s, Polling: %s, Configuration: %s\n",
+         flit_ei_sts_str(buf0, sizeof(buf0), PCI_FLIT_EI_OS_TX_SDS(flit_ei_os_tx)),
+         flit_ei_sts_str(buf1, sizeof(buf1), PCI_FLIT_EI_OS_TX_POLL(flit_ei_os_tx)),
+         flit_ei_sts_str(buf2, sizeof(buf2), PCI_FLIT_EI_OS_TX_CONF(flit_ei_os_tx)));
+  printf("\t\t\t      L0: %s, non-EQ recovery: %s, Eq01: %s\n",
+         flit_ei_sts_str(buf0, sizeof(buf0), PCI_FLIT_EI_OS_TX_L0(flit_ei_os_tx)),
+         flit_ei_sts_str(buf1, sizeof(buf1), PCI_FLIT_EI_OS_TX_NOEQ(flit_ei_os_tx)),
+         flit_ei_sts_str(buf2, sizeof(buf2), PCI_FLIT_EI_OS_TX_EQ01(flit_ei_os_tx)));
+  printf("\t\t\t      Eq2: %s, Eq3: %s\n",
+         flit_ei_sts_str(buf0, sizeof(buf0), PCI_FLIT_EI_OS_TX_EQ2(flit_ei_os_tx)),
+         flit_ei_sts_str(buf1, sizeof(buf1), PCI_FLIT_EI_OS_TX_EQ3(flit_ei_os_tx)));
+
+  u32 flit_ei_os_rx = get_conf_long(d, where + PCI_FLIT_EI_OS_RX);
+  printf("\t\tFlitEiOsRx:   TS0: %s, TS1: %s, TS2: %s\n",
+         flit_ei_sts_str(buf0, sizeof(buf0), PCI_FLIT_EI_OS_RX_TS0(flit_ei_os_rx)),
+         flit_ei_sts_str(buf1, sizeof(buf1), PCI_FLIT_EI_OS_RX_TS1(flit_ei_os_rx)),
+         flit_ei_sts_str(buf2, sizeof(buf2), PCI_FLIT_EI_OS_RX_TS2(flit_ei_os_rx)));
+  printf("\t\t\t      SKP: %s, EIEOS: %s, EIOS: %s\n",
+         flit_ei_sts_str(buf0, sizeof(buf0), PCI_FLIT_EI_OS_RX_SKP(flit_ei_os_rx)),
+         flit_ei_sts_str(buf1, sizeof(buf1), PCI_FLIT_EI_OS_RX_EIEOS(flit_ei_os_rx)),
+         flit_ei_sts_str(buf2, sizeof(buf2), PCI_FLIT_EI_OS_RX_EIOS(flit_ei_os_rx)));
+  printf("\t\t\t      SDS: %s, Polling: %s, Configuration: %s\n",
+         flit_ei_sts_str(buf0, sizeof(buf0), PCI_FLIT_EI_OS_RX_SDS(flit_ei_os_rx)),
+         flit_ei_sts_str(buf1, sizeof(buf1), PCI_FLIT_EI_OS_RX_POLL(flit_ei_os_rx)),
+         flit_ei_sts_str(buf2, sizeof(buf2), PCI_FLIT_EI_OS_RX_CONF(flit_ei_os_rx)));
+  printf("\t\t\t      L0: %s, non-EQ recovery: %s, Eq01: %s\n",
+         flit_ei_sts_str(buf0, sizeof(buf0), PCI_FLIT_EI_OS_RX_L0(flit_ei_os_rx)),
+         flit_ei_sts_str(buf1, sizeof(buf1), PCI_FLIT_EI_OS_RX_NOEQ(flit_ei_os_rx)),
+         flit_ei_sts_str(buf2, sizeof(buf2), PCI_FLIT_EI_OS_RX_EQ01(flit_ei_os_rx)));
+  printf("\t\t\t      Eq2: %s, Eq3: %s\n",
+         flit_ei_sts_str(buf0, sizeof(buf0), PCI_FLIT_EI_OS_RX_EQ2(flit_ei_os_rx)),
+         flit_ei_sts_str(buf1, sizeof(buf1), PCI_FLIT_EI_OS_RX_EQ3(flit_ei_os_rx)));
+}
+
+static const char *flit_log_mes_ctl_gran(char *buf, size_t buflen, u8 sts)
+{
+  switch (sts)
+    {
+      case 0b00:
+        return "all";
+      case 0b001:
+        return "even";
+      case 0b010:
+        return "odd";
+      case 0b011:
+        return "mismatch";
+      default:
+        snprintf(buf, buflen, "Unknown (%u)", sts);
+        return buf;
+    }
+}
+
+static void
+cap_flit_log(struct device *d, int where)
+{
+  char buf[16];
+
+  printf("Flit Logging\n");
+
+  if (verbose < 2)
+    return;
+
+  if (!config_fetch(d, where + PCI_FLIT_LOG_ERR1, 56))
+    return;
+
+  u32 err_log_1 = get_conf_long(d, where + PCI_FLIT_LOG_ERR1);
+  printf("\t\tLog1:      Valid%c, Link Width: %s\n"
+         "\t\t\t   More entries%c Unrecognized flit%c FEC uncorrectable%c\n"
+         "\t\t\t   SyndParityGrp0: %02x, SyndCheckGrp0: %02x\n",
+         FLAG(err_log_1, PCI_FLIT_LOG_ERR1_VLD),
+         link_width_str(buf, sizeof(buf), PCI_FLIT_LOG_ERR1_WIDTH(err_log_1)),
+         FLAG(err_log_1, PCI_FLIT_LOG_ERR1_MORE),
+         FLAG(err_log_1, PCI_FLIT_LOG_ERR1_UNREC),
+         FLAG(err_log_1, PCI_FLIT_LOG_ERR1_UNCOR),
+         PCI_FLIT_LOG_ERR1_PAR_GRP0(err_log_1),
+         PCI_FLIT_LOG_ERR1_CHK_GRP0(err_log_1));
+
+  u32 err_log_2 = get_conf_long(d, where + PCI_FLIT_LOG_ERR2);
+  printf("\t\tLog2:      SyndParityGrp1: %02x, SyndCheckGrp1: %02x\n"
+         "\t\t\t   SyndParityGrp2: %02x, SyndCheckGrp2: %02x\n",
+         PCI_FLIT_LOG_ERR2_PAR_GRP1(err_log_2),
+         PCI_FLIT_LOG_ERR2_CHK_GRP1(err_log_2),
+         PCI_FLIT_LOG_ERR2_PAR_GRP2(err_log_2),
+         PCI_FLIT_LOG_ERR2_CHK_GRP2(err_log_2));
+
+  u16 err_cnt_ctl = get_conf_word(d, where + PCI_FLIT_LOG_CNT_CTL);
+  printf("\t\tCntCtl:    Flit Error Counter En%c Flit Error Counter Interrupt En%c\n"
+         "\t\t\t   Events to count: %u, Trigger Event on Error Count: %02x\n",
+         FLAG(err_cnt_ctl, PCI_FLIT_LOG_CNT_CTL_EN),
+         FLAG(err_cnt_ctl, PCI_FLIT_LOG_CNT_CTL_INT),
+         PCI_FLIT_LOG_CNT_CTL_EVNT(err_cnt_ctl),
+         PCI_FLIT_LOG_CNT_CTL_TRG(err_cnt_ctl));
+
+  u16 err_cnt_sts = get_conf_word(d, where + PCI_FLIT_LOG_CNT_STS);
+  printf("\t\tCntSts:    Link Width when Error Counter Started %s\n"
+         "\t\t\t   Interrupt Generated based on Trigger Event Count%c, FlitErr: %u\n",
+         link_width_str(buf, sizeof(buf), PCI_FLIT_LOG_CNT_STS_WIDTH(err_cnt_sts)),
+         FLAG(err_cnt_sts, PCI_FLIT_LOG_CNT_STS_INT),
+         PCI_FLIT_LOG_CNT_STS_CNT(err_cnt_sts));
+
+  u32 mes_ctl = get_conf_long(d, where + PCI_FLIT_LOG_MES_CTL);
+  printf("\t\tMeasCtl:   En%c Granularity: %s\n",
+         FLAG(mes_ctl, PCI_FLIT_LOG_MES_CTL_EN),
+         flit_log_mes_ctl_gran(buf, sizeof(buf), PCI_FLIT_LOG_MES_CTL_GRAN(mes_ctl)));
+
+  u32 mes_sts1 = get_conf_long(d, where + PCI_FLIT_LOG_MES_STS1);
+  printf("\t\tMeasSts1:  Flit Counter: %u\n", mes_sts1);
+  u32 mes_sts2 = get_conf_long(d, where + PCI_FLIT_LOG_MES_STS2);
+  printf("\t\tMeasSts2:  Invalid Flit Counter: %u\n",
+         PCI_FLIT_LOG_MES_STS2_INV(mes_sts2));
+  u32 mes_sts3 = get_conf_long(d, where + PCI_FLIT_LOG_MES_STS3);
+  printf("\t\tMeasSts3:  Lane0:  %5u, Lane1:  %5u\n",
+         PCI_FLIT_LOG_MES_STS3_LN0(mes_sts3),
+         PCI_FLIT_LOG_MES_STS3_LN1(mes_sts3));
+  u32 mes_sts4 = get_conf_long(d, where + PCI_FLIT_LOG_MES_STS4);
+  printf("\t\tMeasSts4:  Lane2:  %5u, Lane3:  %5u\n",
+         PCI_FLIT_LOG_MES_STS4_LN2(mes_sts4),
+         PCI_FLIT_LOG_MES_STS4_LN3(mes_sts4));
+  u32 mes_sts5 = get_conf_long(d, where + PCI_FLIT_LOG_MES_STS5);
+  printf("\t\tMeasSts5:  Lane4:  %5u, Lane5:  %5u\n",
+         PCI_FLIT_LOG_MES_STS5_LN4(mes_sts5),
+         PCI_FLIT_LOG_MES_STS5_LN5(mes_sts5));
+  u32 mes_sts6 = get_conf_long(d, where + PCI_FLIT_LOG_MES_STS6);
+  printf("\t\tMeasSts6:  Lane6:  %5u, Lane7:  %5u\n",
+         PCI_FLIT_LOG_MES_STS6_LN6(mes_sts6),
+         PCI_FLIT_LOG_MES_STS6_LN7(mes_sts6));
+  u32 mes_sts7 = get_conf_long(d, where + PCI_FLIT_LOG_MES_STS7);
+  printf("\t\tMeasSts7:  Lane8:  %5u, Lane9:  %5u\n",
+         PCI_FLIT_LOG_MES_STS7_LN8(mes_sts7),
+         PCI_FLIT_LOG_MES_STS7_LN9(mes_sts7));
+  u32 mes_sts8 = get_conf_long(d, where + PCI_FLIT_LOG_MES_STS8);
+  printf("\t\tMeasSts8:  Lane10: %5u, Lane11: %5u\n",
+         PCI_FLIT_LOG_MES_STS8_LN10(mes_sts8),
+         PCI_FLIT_LOG_MES_STS8_LN11(mes_sts8));
+  u32 mes_sts9 = get_conf_long(d, where + PCI_FLIT_LOG_MES_STS9);
+  printf("\t\tMeasSts9:  Lane12: %5u, Lane13: %5u\n",
+         PCI_FLIT_LOG_MES_STS9_LN12(mes_sts9),
+         PCI_FLIT_LOG_MES_STS9_LN13(mes_sts9));
+  u32 mes_sts10 = get_conf_long(d, where + PCI_FLIT_LOG_MES_STS10);
+  printf("\t\tMeasSts10: Lane14: %5u, Lane15: %5u\n",
+         PCI_FLIT_LOG_MES_STS10_LN14(mes_sts10),
+         PCI_FLIT_LOG_MES_STS10_LN15(mes_sts10));
 }
 
 void
@@ -2071,6 +2443,15 @@ show_ext_caps(struct device *d, int type)
 	    break;
 	  case PCI_EXT_CAP_ID_DEV3:
 	    cap_dev3(d, where);
+	    break;
+	  case PCI_EXT_CAP_ID_MMIO_RBL:
+	    cap_mmio_rbl(d, where);
+	    break;
+	  case PCI_EXT_CAP_ID_FLIT_EI:
+	    cap_flit_ei(d, where);
+	    break;
+	  case PCI_EXT_CAP_ID_FLIT_LOG:
+	    cap_flit_log(d, where);
 	    break;
 	  default:
 	    printf("Extended Capability ID %#02x\n", id);

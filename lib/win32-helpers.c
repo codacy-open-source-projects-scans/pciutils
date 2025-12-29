@@ -93,18 +93,6 @@ __inline struct _TEB *NtCurrentTeb(void) { __asm mov eax, fs:[PcTeb] }
 #endif
 
 /*
- * These psapi functions are available in kernel32.dll library with K32 prefix
- * on Windows 7 and higher systems. On older Windows systems these functions are
- * available in psapi.dll libary without K32 prefix. So resolve pointers to
- * these functions dynamically at runtime from the available system library.
- * Function GetProcessImageFileNameW() is not available on Windows 2000 and
- * older systems.
- */
-typedef BOOL (WINAPI *EnumProcessesProt)(DWORD *lpidProcess, DWORD cb, DWORD *cbNeeded);
-typedef DWORD (WINAPI *GetProcessImageFileNameWProt)(HANDLE hProcess, LPWSTR lpImageFileName, DWORD nSize);
-typedef DWORD (WINAPI *GetModuleFileNameExWProt)(HANDLE hProcess, HMODULE hModule, LPWSTR lpImageFileName, DWORD nSize);
-
-/*
  * These aclapi function is available in advapi.dll library on Windows 2000
  * and higher systems.
  */
@@ -112,9 +100,47 @@ typedef BOOL (WINAPI *SetSecurityDescriptorControlProt)(PSECURITY_DESCRIPTOR pSe
 
 /*
  * This errhandlingapi function is available in kernel32.dll library on
+ * Win9x systems and then on Windows Vista and higher systems.
+ */
+typedef UINT (WINAPI *GetErrorModeProt)(VOID);
+
+/*
+ * These errhandlingapi functions are available in kernel32.dll library on
  * Windows 7 and higher systems.
  */
+typedef DWORD (WINAPI *GetThreadErrorModeProt)(VOID);
 typedef BOOL (WINAPI *SetThreadErrorModeProt)(DWORD dwNewMode, LPDWORD lpOldMode);
+
+/*
+ * This NtQuerySystemInformation() function and SystemProcessInformation class
+ * is available in all Windows NT based systems. But their definitions are in
+ * any standard WinAPI header file.
+ */
+#ifndef NTSTATUS
+#define NTSTATUS LONG
+#endif
+#ifndef STATUS_INFO_LENGTH_MISMATCH
+#define STATUS_INFO_LENGTH_MISMATCH ((NTSTATUS)0xC0000004)
+#endif
+#ifndef SYSTEM_INFORMATION_CLASS
+#define SYSTEM_INFORMATION_CLASS DWORD
+#endif
+#ifndef SystemProcessInformation
+#define SystemProcessInformation 5
+#endif
+typedef struct {
+  ULONG NextEntryOffset;
+  ULONG NumberOfThreads;
+  LARGE_INTEGER Reserved[6];
+  struct {
+    USHORT Length;
+    USHORT MaximumLength;
+    PWSTR Buffer;
+  } ImageName;
+  LONG BasePriority;
+  HANDLE UniqueProcessId;
+} MY_SYSTEM_PROCESS_INFORMATION;
+typedef NTSTATUS (NTAPI *NtQuerySystemInformationProt)(SYSTEM_INFORMATION_CLASS SystemInformationClass, PVOID SystemInformation, ULONG SystemInformationLength, PULONG ReturnLength);
 
 
 static DWORD
@@ -177,10 +203,88 @@ win32_get_process_machine(void)
 BOOL
 win32_is_non_nt_system(void)
 {
-  OSVERSIONINFOA version;
-  version.dwOSVersionInfoSize = sizeof(version);
-  return GetVersionExA(&version) && version.dwPlatformId < VER_PLATFORM_WIN32_NT;
+#if defined(_M_IX86) || defined(__i386__)
+  /* Highest bit set indicates the non-NT system. */
+  return GetVersion() >> 31;
+#else
+  /* Non-i386 systems are not pre-NT compatible. */
+  return FALSE;
+#endif
 }
+
+static BOOL
+win32_is_nt40_system(void)
+{
+#if defined(_M_IX86) || defined(__i386__)
+  /* Check for Windows NT 4.0. Highest two bits are zero for NT and in lowest 8 bits is major os version. */
+  DWORD raw_version = GetVersion();
+  return (raw_version >> 30) == 0 && (raw_version & 0xff) >= 4;
+#else
+  /* Modern non-i386 systems have at least version 5.2 (XP x64). */
+  return TRUE;
+#endif
+}
+
+static BOOL
+win32_is_win2k_system(void)
+{
+#if defined(_M_IX86) || defined(__i386__)
+  /* Check for Windows 2000 (NT 5.0). Highest two bits are zero for NT and in lowest 8 bits is major os version. */
+  DWORD raw_version = GetVersion();
+  return (raw_version >> 30) == 0 && (raw_version & 0xff) >= 5;
+#else
+  /* Modern non-i386 systems have at least version 5.2 (XP x64). */
+  return TRUE;
+#endif
+}
+
+BOOL
+win32_is_vista_system(void)
+{
+#if defined(_M_IX86) || defined(__i386__)
+  /* Check for Windows Vista (NT 6.0). Highest two bits are zero for NT and in lowest 8 bits is major os version. */
+  DWORD raw_version = GetVersion();
+  return (raw_version >> 30) == 0 && (raw_version & 0xff) >= 6;
+#else
+  /* Check for Windows Vista (NT 6.0). */
+  OSVERSIONINFO version;
+  version.dwOSVersionInfoSize = sizeof(version);
+  if (!GetVersionEx(&version) ||
+      version.dwPlatformId != VER_PLATFORM_WIN32_NT ||
+      version.dwMajorVersion >= 6)
+    return FALSE;
+  else
+    return TRUE;
+#endif
+}
+
+#ifndef _WIN64
+static BOOL
+win32_is_win8_system(void)
+{
+#if defined(_M_IX86) || defined(__i386__)
+  /* Check for Windows 8 (NT 6.2). Highest two bits are zero for NT and in lowest 16 bits are minor<<8 + major os version. */
+  DWORD raw_version = GetVersion();
+  if ((raw_version >> 30) != 0 ||
+      (raw_version & 0xff) < 6 ||
+      ((raw_version & 0xff) == 6 && ((raw_version >> 8) & 0xff) < 2))
+    return FALSE;
+  else
+    return TRUE;
+#else
+  /* Check for Windows 8 (NT 6.2). */
+  OSVERSIONINFO version;
+  version.dwOSVersionInfoSize = sizeof(version);
+  if (!GetVersionEx(&version) ||
+      version.dwPlatformId != VER_PLATFORM_WIN32_NT ||
+      version.dwMajorVersion < 6 ||
+      (version.dwMajorVersion == 6 && version.dwMinorVersion < 2))
+    return FALSE;
+  else
+    return TRUE;
+#endif
+}
+#endif
 
 BOOL
 win32_is_32bit_on_64bit_system(void)
@@ -223,17 +327,7 @@ win32_is_32bit_on_win8_64bit_system(void)
 #ifdef _WIN64
   return FALSE;
 #else
-  OSVERSIONINFOA version;
-
-  /* Check for Windows 8 (NT 6.2). */
-  version.dwOSVersionInfoSize = sizeof(version);
-  if (!GetVersionExA(&version) ||
-      version.dwPlatformId != VER_PLATFORM_WIN32_NT ||
-      version.dwMajorVersion < 6 ||
-      (version.dwMajorVersion == 6 && version.dwMinorVersion < 2))
-    return FALSE;
-
-  return win32_is_32bit_on_64bit_system();
+  return win32_is_win8_system() && win32_is_32bit_on_64bit_system();
 #endif
 }
 
@@ -347,59 +441,82 @@ win32_is_not_native_process(USHORT *native_machine_ptr)
  * error mode of the whole process. Always returns previous error mode.
  */
 UINT
-win32_change_error_mode(UINT new_mode)
+win32_change_error_mode(UINT new_mode, BOOL append)
 {
+  GetThreadErrorModeProt MyGetThreadErrorMode = NULL;
   SetThreadErrorModeProt MySetThreadErrorMode = NULL;
-  OSVERSIONINFOA version;
+  GetErrorModeProt MyGetErrorMode = NULL;
   HMODULE kernel32;
   HMODULE ntdll;
   DWORD old_mode;
 
   /*
-   * Function SetThreadErrorMode() was introduced in Windows 7, so use
-   * GetProcAddress() for compatibility with older systems.
+   * Functions GetThreadErrorMode() and SetThreadErrorMode() were introduced
+   * in Windows 7, so use GetProcAddress() for compatibility with older systems.
    */
   kernel32 = GetModuleHandle(TEXT("kernel32.dll"));
   if (kernel32)
-    MySetThreadErrorMode = (SetThreadErrorModeProt)(void(*)(void))GetProcAddress(kernel32, "SetThreadErrorMode");
+    {
+      MyGetThreadErrorMode = (GetThreadErrorModeProt)(void(*)(void))GetProcAddress(kernel32, "GetThreadErrorMode");
+      MySetThreadErrorMode = (SetThreadErrorModeProt)(void(*)(void))GetProcAddress(kernel32, "SetThreadErrorMode");
+      MyGetErrorMode = (GetErrorModeProt)(void(*)(void))GetProcAddress(kernel32, "GetErrorMode");
+    }
 
   /*
-   * Function RtlSetThreadErrorMode() was introduced in Windows XP x64
-   * and Windows Server 2003. Use GetProcAddress() as it is in ntdll.dll.
+   * Functions RtlGetThreadErrorMode() and RtlSetThreadErrorMode() were introduced
+   * in Windows XP x64 and Windows Server 2003. Use GetProcAddress() as they are in ntdll.dll.
    */
-  if (!MySetThreadErrorMode)
+  if (!MyGetThreadErrorMode || !MySetThreadErrorMode)
     {
       ntdll = GetModuleHandle(TEXT("ntdll.dll"));
       if (ntdll)
-        MySetThreadErrorMode = (SetThreadErrorModeProt)(void(*)(void))GetProcAddress(ntdll, "RtlSetThreadErrorMode");
+        {
+          MyGetThreadErrorMode = (GetThreadErrorModeProt)(void(*)(void))GetProcAddress(ntdll, "RtlGetThreadErrorMode");
+          MySetThreadErrorMode = (SetThreadErrorModeProt)(void(*)(void))GetProcAddress(ntdll, "RtlSetThreadErrorMode");
+        }
     }
 
-  if (MySetThreadErrorMode &&
-      MySetThreadErrorMode(new_mode, &old_mode))
-    return old_mode;
+  if (MyGetThreadErrorMode && MySetThreadErrorMode)
+    {
+      old_mode = MyGetThreadErrorMode();
+      MySetThreadErrorMode(new_mode | (append ? old_mode : 0), &old_mode);
+      return old_mode;
+    }
 
 #ifdef TEB_HARD_ERROR_MODE_OFFSET
   /*
    * On Windows NT 4.0+ systems fallback to thread HardErrorMode API.
    * It depends on architecture specific offset for HardErrorMode field in TEB.
    */
-  version.dwOSVersionInfoSize = sizeof(version);
-  if (GetVersionExA(&version) &&
-      version.dwPlatformId == VER_PLATFORM_WIN32_NT &&
-      version.dwMajorVersion >= 4)
+  if (win32_is_nt40_system())
     {
       ULONG *hard_error_mode_ptr = (ULONG *)((BYTE *)NtCurrentTeb() + TEB_HARD_ERROR_MODE_OFFSET);
       old_mode = *hard_error_mode_ptr;
-      *hard_error_mode_ptr = new_mode;
+      *hard_error_mode_ptr = new_mode | (append ? old_mode : 0);
       return old_mode;
     }
 #endif
 
   /*
-   * Fallback to function SetErrorMode() which modifies error mode of the
-   * whole process and returns old mode.
+   * If GetErrorMode() is available and we were requested to just append
+   * new error bits then fallback to GetErrorMode()+SetErrorMode()
+   * functions which modifies error mode of the whole process just once.
    */
-  return SetErrorMode(new_mode);
+  if (MyGetErrorMode && append)
+    {
+      old_mode = MyGetErrorMode();
+      old_mode = SetErrorMode(new_mode | old_mode);
+      return old_mode;
+    }
+
+  /*
+   * Fallback to function SetErrorMode() which modifies error mode of the
+   * whole process in thread-unsafe way two times and returns old mode.
+   */
+  old_mode = SetErrorMode(new_mode);
+  if (append)
+    SetErrorMode(new_mode | old_mode);
+  return old_mode;
 }
 
 /*
@@ -408,7 +525,7 @@ win32_change_error_mode(UINT new_mode)
  * not have permission to open its own current active access token) is evaluated
  * as thread does not have that privilege.
  */
-BOOL
+static BOOL
 win32_have_privilege(LUID luid_privilege)
 {
   PRIVILEGE_SET priv;
@@ -472,26 +589,44 @@ set_privilege(HANDLE token, LUID luid_privilege, BOOL enable)
  * used for reverting to this access token. It is set to NULL if the current
  * thread previously used primary process access token.
  */
-BOOL
+static BOOL
 win32_change_token(HANDLE new_token, HANDLE *old_token)
 {
-  HANDLE token;
+  HANDLE current_token;
+  HANDLE impersonate_token;
 
-  if (!OpenThreadToken(GetCurrentThread(), TOKEN_IMPERSONATE, TRUE, &token))
+  if (!OpenThreadToken(GetCurrentThread(), TOKEN_IMPERSONATE, TRUE, &current_token))
     {
       if (GetLastError() != ERROR_NO_TOKEN)
         return FALSE;
-      token = NULL;
+      current_token = NULL;
     }
 
-  if (!ImpersonateLoggedOnUser(new_token))
+  /*
+   * SetThreadToken() can set only impersonation token, not the primary token
+   * (which caller passed as argument). Function DuplicateToken() can be used
+   * to create a new impersonation token as duplicate of the primary token.
+   */
+  if (!DuplicateToken(new_token, SecurityImpersonation, &impersonate_token))
     {
-      if (token)
-        CloseHandle(token);
+      if (current_token)
+        CloseHandle(current_token);
       return FALSE;
     }
 
-  *old_token = token;
+  /*
+   * NULL argument for SetThreadToken() specifies the current thread.
+   * If thread handle argument is value returned GetCurrentThread() then
+   * SetThreadToken() function crashes on older Windows versions.
+   */
+  if (!SetThreadToken(NULL, impersonate_token))
+    {
+      if (current_token)
+        CloseHandle(current_token);
+      return FALSE;
+    }
+
+  *old_token = current_token;
   return TRUE;
 }
 
@@ -519,7 +654,7 @@ change_token_to_primary(HANDLE *old_token)
  * token is specified as NULL then revert to the primary process access token.
  * Use to revert after win32_change_token() or change_token_to_primary() call.
  */
-VOID
+static VOID
 win32_revert_to_token(HANDLE token)
 {
   /*
@@ -748,7 +883,6 @@ prepare_security_descriptor_for_set_operation(PSECURITY_DESCRIPTOR security_desc
   SECURITY_DESCRIPTOR_CONTROL bits_mask;
   SECURITY_DESCRIPTOR_CONTROL bits_set;
   SECURITY_DESCRIPTOR_CONTROL control;
-  OSVERSIONINFO version;
   HMODULE advapi32;
   DWORD revision;
 
@@ -778,10 +912,7 @@ prepare_security_descriptor_for_set_operation(PSECURITY_DESCRIPTOR security_desc
    * older versions of advapi32.dll library, so resolve it at runtime.
    */
 
-  version.dwOSVersionInfoSize = sizeof(version);
-  if (!GetVersionEx(&version) ||
-      version.dwPlatformId != VER_PLATFORM_WIN32_NT ||
-      version.dwMajorVersion < 5)
+  if (!win32_is_win2k_system())
     return TRUE;
 
   if (!GetSecurityDescriptorControl(security_descriptor, &control, &revision))
@@ -1020,11 +1151,10 @@ revert_token_dacl_permissions(HANDLE token, PSECURITY_DESCRIPTOR old_security_de
  * optionally also with vm read right.
  */
 static HANDLE
-open_process_for_query(DWORD pid, BOOL with_vm_read)
+open_process_for_query(DWORD pid)
 {
   BOOL revert_only_privilege;
   LUID luid_debug_privilege;
-  OSVERSIONINFO version;
   DWORD process_right;
   HANDLE revert_token;
   HANDLE process;
@@ -1044,16 +1174,10 @@ open_process_for_query(DWORD pid, BOOL with_vm_read)
    * PROCESS_QUERY_LIMITED_INFORMATION right on older systems than
    * Windows Vista (NT 6.0).
    */
-  version.dwOSVersionInfoSize = sizeof(version);
-  if (GetVersionEx(&version) &&
-      version.dwPlatformId == VER_PLATFORM_WIN32_NT &&
-      version.dwMajorVersion >= 6)
+  if (win32_is_vista_system())
     process_right = PROCESS_QUERY_LIMITED_INFORMATION;
   else
     process_right = PROCESS_QUERY_INFORMATION;
-
-  if (with_vm_read)
-    process_right |= PROCESS_VM_READ;
 
   process = OpenProcess(process_right, FALSE, pid);
   if (process)
@@ -1081,42 +1205,32 @@ open_process_for_query(DWORD pid, BOOL with_vm_read)
 }
 
 /*
- * Check if process image path name (wide string) matches exe file name
- * (7-bit ASCII string). Do case-insensitive string comparison. Process
- * image path name can be in any namespace format (DOS, Win32, UNC, ...).
+ * Check if the non-nul-term wide string of the process image file name
+ * (base name with extension) matches the narrow nul-term string of the
+ * exe file name (base name with extension). Do case-insensitive string
+ * comparison because process image name is uppercase on older Windows
+ * versions.
  */
 static BOOL
-check_process_name(LPCWSTR path, DWORD path_length, LPCSTR exe_file)
+check_process_name(LPCWSTR image_name, DWORD image_name_byte_length, LPCSTR exe_file)
 {
-  DWORD exe_file_length;
+  DWORD exe_file_length = strlen(exe_file);
   WCHAR c1;
   UCHAR c2;
   DWORD i;
 
-  exe_file_length = 0;
-  while (exe_file[exe_file_length] != '\0')
-    exe_file_length++;
-
-  /* Path must have backslash before exe file name. */
-  if (exe_file_length >= path_length ||
-      path[path_length-exe_file_length-1] != L'\\')
+  if (image_name_byte_length / sizeof(WCHAR) != exe_file_length)
     return FALSE;
 
   for (i = 0; i < exe_file_length; i++)
     {
-      c1 = path[path_length-exe_file_length+i];
+      c1 = image_name[i];
       c2 = exe_file[i];
-      /*
-       * Input string for comparison is 7-bit ASCII and file name part
-       * of path must not contain backslash as it is path separator.
-       */
-      if (c1 >= 0x80 || c2 >= 0x80 || c1 == L'\\')
-        return FALSE;
       if (c1 >= L'a' && c1 <= L'z')
         c1 -= L'a' - L'A';
       if (c2 >= 'a' && c2 <= 'z')
         c2 -= 'a' - 'A';
-      if (c1 != c2)
+      if (c1 != c2 || c2 >= 0x80) /* exe_file must be 7-bit ASCII */
         return FALSE;
     }
 
@@ -1124,191 +1238,73 @@ check_process_name(LPCWSTR path, DWORD path_length, LPCSTR exe_file)
 }
 
 /* Open process handle with the query right specified by process exe file. */
-HANDLE
+static HANDLE
 win32_find_and_open_process_for_query(LPCSTR exe_file)
 {
-  GetProcessImageFileNameWProt MyGetProcessImageFileNameW;
-  GetModuleFileNameExWProt MyGetModuleFileNameExW;
-  EnumProcessesProt MyEnumProcesses;
-  HMODULE kernel32, psapi;
-  UINT prev_error_mode;
-  DWORD partial_retry;
-  BOOL found_process;
-  DWORD size, length;
-  DWORD *processes;
+  HMODULE ntdll;
+  NtQuerySystemInformationProt MyNtQuerySystemInformation;
+  MY_SYSTEM_PROCESS_INFORMATION *info;
+  NTSTATUS status;
+  BYTE *buffer;
+  DWORD size;
   HANDLE process;
-  LPWSTR path;
-  DWORD error;
-  DWORD count;
-  DWORD i;
 
-  psapi = NULL;
-  kernel32 = GetModuleHandle(TEXT("kernel32.dll"));
-  if (!kernel32)
+  /* Ntdll.dll is loaded into every process on all NT systems. */
+  ntdll = GetModuleHandle(TEXT("ntdll.dll"));
+  if (!ntdll)
+    return NULL;
+
+  MyNtQuerySystemInformation = (LPVOID)GetProcAddress(ntdll, "NtQuerySystemInformation");
+  if (!MyNtQuerySystemInformation)
     return NULL;
 
   /*
-   * On Windows 7 and higher systems these functions are available in
-   * kernel32.dll library with K32 prefix.
+   * Retrieve information about all processes in system via
+   * NtQuerySystemInformation(SystemProcessInformation) call.
+   * This method returns both process id and process name.
+   * It is supported on all Windows NT based systems.
    */
-  MyGetModuleFileNameExW = NULL;
-  MyGetProcessImageFileNameW = (GetProcessImageFileNameWProt)(void(*)(void))GetProcAddress(kernel32, "K32GetProcessImageFileNameW");
-  MyEnumProcesses = (EnumProcessesProt)(void(*)(void))GetProcAddress(kernel32, "K32EnumProcesses");
-  if (!MyGetProcessImageFileNameW || !MyEnumProcesses)
-    {
-      /*
-       * On older NT-based systems these functions are available in
-       * psapi.dll library without K32 prefix.
-       */
-      prev_error_mode = win32_change_error_mode(SEM_FAILCRITICALERRORS | SEM_NOOPENFILEERRORBOX);
-      psapi = LoadLibrary(TEXT("psapi.dll"));
-      win32_change_error_mode(prev_error_mode);
-
-      if (!psapi)
-        return NULL;
-
-      /*
-       * Function GetProcessImageFileNameW() is available in
-       * Windows XP and higher systems. On older versions is
-       * available function GetModuleFileNameExW().
-       */
-      MyGetProcessImageFileNameW = (GetProcessImageFileNameWProt)(void(*)(void))GetProcAddress(psapi, "GetProcessImageFileNameW");
-      MyGetModuleFileNameExW = (GetModuleFileNameExWProt)(void(*)(void))GetProcAddress(psapi, "GetModuleFileNameExW");
-      MyEnumProcesses = (EnumProcessesProt)(void(*)(void))GetProcAddress(psapi, "EnumProcesses");
-      if ((!MyGetProcessImageFileNameW && !MyGetModuleFileNameExW) || !MyEnumProcesses)
-        {
-          FreeLibrary(psapi);
-          return NULL;
-        }
-    }
-
-  /* Make initial buffer size for 1024 processes. */
-  size = 1024 * sizeof(*processes);
-
+  size = 4096;
 retry:
-  processes = (DWORD *)LocalAlloc(LPTR, size);
-  if (!processes)
+  buffer = (BYTE *)LocalAlloc(LPTR, size);
+  if (!buffer)
+    return NULL;
+  status = MyNtQuerySystemInformation(SystemProcessInformation, buffer, size, NULL);
+  if (status == STATUS_INFO_LENGTH_MISMATCH)
     {
-      if (psapi)
-        FreeLibrary(psapi);
-      return NULL;
-    }
-
-  if (!MyEnumProcesses(processes, size, &length))
-    {
-      LocalFree(processes);
-      if (psapi)
-        FreeLibrary(psapi);
-      return NULL;
-    }
-  else if (size == length)
-    {
-      /*
-       * There is no indication given when the buffer is too small to
-       * store all process identifiers. Therefore if returned length
-       * is same as buffer size there can be more processes. Call
-       * again with larger buffer.
-       */
-      LocalFree(processes);
+      LocalFree(buffer);
       size *= 2;
       goto retry;
     }
-
-  process = NULL;
-  count = length / sizeof(*processes);
-
-  for (i = 0; i < count; i++)
+  if (status < 0)
     {
-      /* Skip System Idle Process. */
-      if (processes[i] == 0)
-        continue;
-
-      /*
-       * Function GetModuleFileNameExW() requires additional
-       * PROCESS_VM_READ right as opposite to function
-       * GetProcessImageFileNameW() which does not need it.
-       */
-      process = open_process_for_query(processes[i], MyGetProcessImageFileNameW ? FALSE : TRUE);
-      if (!process)
-        continue;
-
-      /*
-       * Set initial buffer size to 256 (wide) characters.
-       * Final path length on the modern NT-based systems can be also larger.
-       */
-      size = 256;
-      found_process = FALSE;
-      partial_retry = 0;
-
-retry_path:
-      path = (LPWSTR)LocalAlloc(LPTR, size * sizeof(*path));
-      if (!path)
-        goto end_path;
-
-      if (MyGetProcessImageFileNameW)
-        length = MyGetProcessImageFileNameW(process, path, size);
-      else
-        length = MyGetModuleFileNameExW(process, NULL, path, size);
-
-      error = GetLastError();
-
-      /*
-       * GetModuleFileNameEx() returns zero and signal error ERROR_PARTIAL_COPY
-       * when remote process is in the middle of updating its module table.
-       * Sleep 10 ms and try again, max 10 attempts.
-       */
-      if (!MyGetProcessImageFileNameW)
-        {
-          if (length == 0 && error == ERROR_PARTIAL_COPY && partial_retry++ < 10)
-            {
-              Sleep(10);
-              goto retry_path;
-            }
-          partial_retry = 0;
-        }
-
-      /*
-       * When buffer is too small then function GetModuleFileNameEx() returns
-       * its size argument on older systems (Windows XP) or its size minus
-       * argument one on new systems (Windows 10) without signalling any error.
-       * Function GetProcessImageFileNameW() on the other hand returns zero
-       * value and signals error ERROR_INSUFFICIENT_BUFFER. So in all these
-       * cases call function again with larger buffer.
-       */
-
-      if (MyGetProcessImageFileNameW && length == 0 && error != ERROR_INSUFFICIENT_BUFFER)
-        goto end_path;
-
-      if ((MyGetProcessImageFileNameW && length == 0) ||
-          (!MyGetProcessImageFileNameW && (length == size || length == size-1)))
-        {
-          LocalFree(path);
-          size *= 2;
-          goto retry_path;
-        }
-
-      if (length && check_process_name(path, length, exe_file))
-        found_process = TRUE;
-
-end_path:
-      if (path)
-        {
-          LocalFree(path);
-          path = NULL;
-        }
-
-      if (found_process)
-        break;
-
-      CloseHandle(process);
-      process = NULL;
+      LocalFree(buffer);
+      return NULL;
     }
 
-  LocalFree(processes);
+  process = NULL;
+  info = (MY_SYSTEM_PROCESS_INFORMATION *)buffer;
+  while (1)
+    {
+      /*
+       * ImageName is just file base name with extension, not the full path.
+       * For inaccessible and system processes it can be an empty string.
+       * Note that ImageName.Length is length without nul term in bytes
+       * and ImageName.Buffer is the wide string.
+       */
+      if (check_process_name(info->ImageName.Buffer, info->ImageName.Length, exe_file))
+        {
+          process = open_process_for_query((DWORD)info->UniqueProcessId);
+          break;
+        }
 
-  if (psapi)
-    FreeLibrary(psapi);
+      if (info->NextEntryOffset == 0)
+        break;
 
+      info = (MY_SYSTEM_PROCESS_INFORMATION *)((BYTE *)info + info->NextEntryOffset);
+    }
+
+  LocalFree(buffer);
   return process;
 }
 
@@ -1358,7 +1354,7 @@ try_grant_permissions_and_open_process_token(HANDLE process, DWORD rights)
  * Open primary access token of particular process handle with specified rights.
  * If permissions for specified rights are missing then try to grant them.
  */
-HANDLE
+static HANDLE
 win32_open_process_token_with_rights(HANDLE process, DWORD rights)
 {
   HANDLE old_token;
