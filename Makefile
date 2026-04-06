@@ -1,11 +1,11 @@
 # Makefile for The PCI Utilities
-# (c) 1998--2025 Martin Mares <mj@ucw.cz>
+# (c) 1998--2026 Martin Mares <mj@ucw.cz>
 
 OPT=-O2
 CFLAGS=$(OPT) -Wall -W -Wno-parentheses -Wstrict-prototypes -Wmissing-prototypes
 
-VERSION=3.14.0
-DATE=2025-06-21
+VERSION=3.15.0
+DATE=2026-04-05
 
 # Host OS and release (override if you are cross-compiling)
 HOST=
@@ -141,19 +141,17 @@ setpci$(EXEEXT): setpci-rsrc.o
 pcilmr$(EXEEXT): pcilmr-rsrc.o
 endif
 
-%.8 %.7 %.5: %.man
-	M=`echo $(DATE) | sed 's/-01-/-January-/;s/-02-/-February-/;s/-03-/-March-/;s/-04-/-April-/;s/-05-/-May-/;s/-06-/-June-/;s/-07-/-July-/;s/-08-/-August-/;s/-09-/-September-/;s/-10-/-October-/;s/-11-/-November-/;s/-12-/-December-/;s/\(.*\)-\(.*\)-\(.*\)/\3 \2 \1/'` ; sed <$< >$@ "s/@TODAY@/$$M/;s/@VERSION@/pciutils-$(VERSION)/;s#@IDSDIR@#$(IDSDIR)#;s#@PCI_IDS@#$(PCI_IDS)#"
+%.5: %.man tools/build-man
+	tools/build-man $< $@
 
-ctags:
-	rm -f tags
-	find . -name '*.[hc]' -exec ctags --append {} +
+%.7: %.man tools/build-man
+	tools/build-man $< $@
 
-TAGS:
-	rm -f TAGS
-	find . -name '*.[hc]' -exec etags --append {} +
+%.8: %.man tools/build-man
+	tools/build-man $< $@
 
 clean:
-	rm -f `find . -name "*~" -o -name "*.[oa]" -o -name "\#*\#" -o -name TAGS -o -name core -o -name "*.orig"`
+	rm -f `find . -name "*~" -o -name "*.[oa]" -o -name "\#*\#" -o -name core -o -name "*.orig"`
 	rm -f update-pciids lspci$(EXEEXT) setpci$(EXEEXT) example$(EXEEXT) lib/config.* *.[578] pci.ids.gz lib/*.pc lib/*.so lib/*.so.* lib/*.dll lib/*.def lib/dllrsrc.rc *-rsrc.rc tags pcilmr$(EXEEXT)
 	rm -rf maint/dist
 

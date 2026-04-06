@@ -1,7 +1,7 @@
 /*
  *	The PCI Library -- Reading of Bus Dumps
  *
- *	Copyright (c) 1997--2008 Martin Mares <mj@ucw.cz>
+ *	Copyright (c) 1997--2026 Martin Mares <mj@ucw.cz>
  *
  *	Can be freely distributed and used under the terms of the GNU GPL v2+.
  *
@@ -55,27 +55,18 @@ dump_validate(char *s, char *fmt)
   return 1;
 }
 
-static void
-dump_init(struct pci_access *a)
+static const char *
+dump_parse(struct pci_access *a, FILE *f)
 {
-  char *name = pci_get_param(a, "dump.name");
-  FILE *f;
   char buf[256];
   struct pci_dev *dev = NULL;
   int len, mn, bn, dn, fn, i, j;
 
-  if (!name)
-    a->error("dump: File name not given.");
-  if (!(f = fopen(name, "r")))
-    a->error("dump: Cannot open %s: %s", name, strerror(errno));
   while (fgets(buf, sizeof(buf)-1, f))
     {
       char *z = strchr(buf, '\n');
       if (!z)
-	{
-	  fclose(f);
-	  a->error("dump: line too long or unterminated");
-	}
+	return "Line too long or unterminated";
       *z-- = 0;
       if (z >= buf && *z == '\r')
 	*z-- = 0;
@@ -104,10 +95,7 @@ dump_init(struct pci_access *a)
 		 sscanf(z, "%x", &j) == 1 && j < 256)
 	    {
 	      if (i >= 4096)
-		{
-		  fclose(f);
-		  a->error("dump: At most 4096 bytes of config space are supported");
-		}
+		return "At most 4096 bytes of config space are supported";
 	      if (i >= dd->allocated)	/* Need to re-allocate the buffer */
 		{
 		  dump_alloc_data(dev, 4096);
@@ -123,13 +111,35 @@ dump_init(struct pci_access *a)
 		z++;
 	    }
 	  if (*z)
-	    {
-	      fclose(f);
-	      a->error("dump: Malformed line");
-	    }
+	    return "Malformed line";
 	}
     }
-  fclose(f);
+
+  return NULL;
+}
+
+static void
+dump_init(struct pci_access *a)
+{
+  char *name = pci_get_param(a, "dump.name");
+  const char *err;
+
+  if (!name)
+    a->error("dump: File name not given.");
+
+  if (!strcmp(name, "-"))
+    err = dump_parse(a, stdin);
+  else
+    {
+      FILE *f = fopen(name, "r");
+      if (!f)
+	a->error("dump: Cannot open %s: %s", name, strerror(errno));
+      err = dump_parse(a, f);
+      fclose(f);
+    }
+
+  if (err)
+    a->error("dump: %s", err);
 }
 
 static void

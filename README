@@ -1,6 +1,6 @@
 This package contains the PCI Utilities, version @VERSION@.
 
-Copyright (c) 1997--2024 Martin Mares <mj@ucw.cz>
+Copyright (c) 1997--2026 Martin Mares <mj@ucw.cz>
 
 All files in this package can be freely distributed and used according
 to the terms of the GNU General Public License, either version 2 or
@@ -30,7 +30,7 @@ In runs on the following systems:
 	BeOS		(via syscalls)
 	Haiku		(via /dev/misc/poke)
 	Darwin		(via IOKit)
-	DOS/DJGPP	(via i386 ports)
+	DOS/DJGPP	(via i386 ports, see README.DJGPP)
 	SylixOS		(via /proc/pci)
 	AmigaOS on PPC	(via Expansion library)
 	RT-Thread Smart	(via /proc/pci)

@@ -22,7 +22,7 @@ extern "C" {
 #include "header.h"
 #include "types.h"
 
-#define PCI_LIB_VERSION 0x030e00
+#define PCI_LIB_VERSION 0x030f00
 
 #ifndef PCI_ABI
 #define PCI_ABI
@@ -167,6 +167,7 @@ struct pci_dev {
   u32 rcd_link_cap;     		/* Link Capabilities register for Restricted CXL Devices */
   u16 rcd_link_status;  		/* Link Status register for RCD */
   u16 rcd_link_ctrl;    		/* Link Control register for RCD */
+  struct pci_msi_routing *msi_routing;	/* Routing of MSI or MSI-X interrupts */
 
   /* Fields used internally */
   struct pci_access *access;
@@ -240,8 +241,14 @@ char *pci_get_string_property(struct pci_dev *d, u32 prop) PCI_ABI;
 #define PCI_FILL_PARENT		0x00080000
 #define PCI_FILL_DRIVER		0x00100000      /* OS driver currently in use (string property) */
 #define PCI_FILL_RCD_LNK	0x00200000      /* CXL RCD Link status properties (rcd_*) */
+#define PCI_FILL_MSI_ROUTING	0x00400000	/* MSI interrupt routing (msi_routing) */
 
 void pci_setup_cache(struct pci_dev *, u8 *cache, int len) PCI_ABI;
+
+struct pci_msi_routing {
+  struct pci_msi_routing *next;
+  int irq;
+};
 
 /*
  *	Capabilities
@@ -278,6 +285,8 @@ void pci_filter_init(struct pci_access *, struct pci_filter *) PCI_ABI;
 char *pci_filter_parse_slot(struct pci_filter *, char *) PCI_ABI;
 char *pci_filter_parse_id(struct pci_filter *, char *) PCI_ABI;
 int pci_filter_match(struct pci_filter *, struct pci_dev *) PCI_ABI;
+int pci_filter_has_slot(struct pci_filter *) PCI_ABI;
+int pci_filter_has_id(struct pci_filter *) PCI_ABI;
 
 /*
  *	Conversion of PCI IDs to names (according to the pci.ids file)
